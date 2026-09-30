@@ -1,0 +1,6 @@
+{
+  "name": "WPMobile Hub",
+  "description": "Universal mobile dashboard for WordPress & WooCommerce with multi-site management, block editor, e-commerce catalog, orders, and CRM.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
