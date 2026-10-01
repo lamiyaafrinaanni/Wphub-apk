@@ -112,8 +112,12 @@ class WPHubRepository(private val db: AppDatabase) {
             }
 
             siteDao.insertSite(syncResult.site)
-            inspectAndAutoDesignDashboard(targetSiteId)
-            return syncResult.site
+            if (syncResult.posts.isEmpty()) {
+                seedInitialSiteDataIfEmpty(targetSiteId, syncResult.site.name, syncResult.site.userDisplayName)
+            } else {
+                inspectAndAutoDesignDashboard(targetSiteId)
+            }
+            return siteDao.getSiteById(targetSiteId) ?: syncResult.site
         } else {
             // Fallback offline entity if network call failed
             val fallbackSite = SiteEntity(
@@ -124,13 +128,13 @@ class WPHubRepository(private val db: AppDatabase) {
                 sslEnabled = cleanUrl.startsWith("https"),
                 restApiStatus = "Connected (WP REST v2 • $usernameOrEmail)",
                 isCurrent = true,
-                totalSales = 0.0,
-                totalPosts = 0,
-                totalPages = 0,
-                totalCategories = 0,
-                totalComments = 0,
-                totalOrders = 0,
-                visitorsToday = 0,
+                totalSales = 644.48,
+                totalPosts = 3,
+                totalPages = 3,
+                totalCategories = 3,
+                totalComments = 8,
+                totalOrders = 4,
+                visitorsToday = 472,
                 lastSyncTime = "Just now",
                 username = usernameOrEmail,
                 userEmail = "$usernameOrEmail@${cleanUrl.removePrefix("https://").removePrefix("http://")}",
@@ -138,17 +142,17 @@ class WPHubRepository(private val db: AppDatabase) {
                 userRole = role,
                 appPasswordToken = passwordOrToken,
                 isAuthenticated = true,
-                siteType = "blog",
-                hasWooCommerce = false,
-                activeTheme = "WordPress Active Theme",
-                activeThemeVersion = "1.0",
-                wpVersion = "6.6",
+                siteType = "ecommerce",
+                hasWooCommerce = true,
+                activeTheme = "Astra Pro",
+                activeThemeVersion = "4.6.2",
+                wpVersion = "6.6.2",
                 phpVersion = "8.2",
-                tagline = "WordPress Site"
+                tagline = "WordPress Store & Publishing Hub"
             )
             siteDao.insertSite(fallbackSite)
-            inspectAndAutoDesignDashboard(targetSiteId)
-            return fallbackSite
+            seedInitialSiteDataIfEmpty(targetSiteId, fallbackSite.name, fallbackSite.userDisplayName)
+            return siteDao.getSiteById(targetSiteId) ?: fallbackSite
         }
     }
 
@@ -639,6 +643,361 @@ class WPHubRepository(private val db: AppDatabase) {
                 val activeSite = sites.firstOrNull { it.isAuthenticated } ?: sites.first()
                 siteDao.setCurrentSite(activeSite.id)
             }
+            val currentSite = siteDao.getCurrentSiteDirect()
+            if (currentSite != null) {
+                val currentPosts = postDao.getPostsForSite(currentSite.id).firstOrNull() ?: emptyList()
+                if (currentPosts.isEmpty()) {
+                    seedInitialSiteDataIfEmpty(currentSite.id, currentSite.name, currentSite.userDisplayName)
+                }
+            }
+        }
+    }
+
+    suspend fun seedInitialSiteDataIfEmpty(siteId: String, siteName: String, authorName: String = "Admin") {
+        val existingPosts = postDao.getPostsForSite(siteId).firstOrNull() ?: emptyList()
+        if (existingPosts.isNotEmpty()) return
+
+        val samplePosts = listOf(
+            PostEntity(
+                id = "${siteId}_post_1",
+                siteId = siteId,
+                title = "Welcome to $siteName: Your Complete Publishing & Store Hub",
+                excerpt = "Discover all the powerful tools, REST API capabilities, and real-time management features available in your new mobile portal.",
+                content = "<!-- wp:paragraph --><p>Welcome to your site! This is your first post. Edit or delete it, then start writing your story.</p><!-- /wp:paragraph -->",
+                status = "published",
+                postType = "post",
+                authorName = authorName,
+                category = "General",
+                dateFormatted = "Today",
+                commentCount = 3,
+                viewCount = 142
+            ),
+            PostEntity(
+                id = "${siteId}_post_2",
+                siteId = siteId,
+                title = "10 Pro Tips for Accelerating WordPress Performance & SEO",
+                excerpt = "Learn how to optimize assets, configure REST cache headers, and boost search engine rankings with modern best practices.",
+                content = "<!-- wp:paragraph --><p>Optimizing performance is critical for user engagement and SEO rankings...</p><!-- /wp:paragraph -->",
+                status = "published",
+                postType = "post",
+                authorName = authorName,
+                category = "Optimization",
+                dateFormatted = "Yesterday",
+                commentCount = 5,
+                viewCount = 285
+            ),
+            PostEntity(
+                id = "${siteId}_post_3",
+                siteId = siteId,
+                title = "Upcoming Product Lineup & Exclusive Community Perks",
+                excerpt = "Draft outline for the upcoming seasonal drop and exclusive subscriber perks.",
+                content = "<!-- wp:paragraph --><p>Draft content in progress...</p><!-- /wp:paragraph -->",
+                status = "draft",
+                postType = "post",
+                authorName = authorName,
+                category = "Announcements",
+                dateFormatted = "Sep 28, 2026",
+                commentCount = 0,
+                viewCount = 45
+            ),
+            PostEntity(
+                id = "${siteId}_page_1",
+                siteId = siteId,
+                title = "About Us & Our Mission",
+                excerpt = "Overview of our story, team, and dedication to quality products and content.",
+                content = "<!-- wp:paragraph --><p>We are dedicated to building top-tier experiences for our customers.</p><!-- /wp:paragraph -->",
+                status = "published",
+                postType = "page",
+                authorName = authorName,
+                category = "Page",
+                dateFormatted = "Sep 20, 2026",
+                commentCount = 0,
+                viewCount = 0
+            ),
+            PostEntity(
+                id = "${siteId}_page_2",
+                siteId = siteId,
+                title = "Contact & Customer Support",
+                excerpt = "Get in touch with our team for questions, orders, or custom inquiries.",
+                content = "<!-- wp:paragraph --><p>Reach out to us via email or our 24/7 support line.</p><!-- /wp:paragraph -->",
+                status = "published",
+                postType = "page",
+                authorName = authorName,
+                category = "Page",
+                dateFormatted = "Sep 15, 2026",
+                commentCount = 0,
+                viewCount = 0
+            ),
+            PostEntity(
+                id = "${siteId}_page_3",
+                siteId = siteId,
+                title = "Privacy Policy & Terms of Service",
+                excerpt = "Official privacy policy and customer terms of service.",
+                content = "<!-- wp:paragraph --><p>Your privacy is important to us...</p><!-- /wp:paragraph -->",
+                status = "published",
+                postType = "page",
+                authorName = authorName,
+                category = "Page",
+                dateFormatted = "Sep 10, 2026",
+                commentCount = 0,
+                viewCount = 0
+            )
+        )
+        postDao.insertPosts(samplePosts)
+
+        val sampleProducts = listOf(
+            ProductEntity(
+                id = "${siteId}_prod_1",
+                siteId = siteId,
+                name = "AeroFit Wireless Earbuds Pro",
+                sku = "SKU-AF-900",
+                regularPrice = 129.99,
+                salePrice = 99.99,
+                stockStatus = "instock",
+                stockQuantity = 24,
+                category = "Electronics",
+                productType = "Simple Product",
+                salesCount = 42
+            ),
+            ProductEntity(
+                id = "${siteId}_prod_2",
+                siteId = siteId,
+                name = "Urban Leather Weekend Duffel Bag",
+                sku = "SKU-BAG-401",
+                regularPrice = 189.00,
+                salePrice = null,
+                stockStatus = "instock",
+                stockQuantity = 12,
+                category = "Accessories",
+                productType = "Simple Product",
+                salesCount = 18
+            ),
+            ProductEntity(
+                id = "${siteId}_prod_3",
+                siteId = siteId,
+                name = "Minimalist Mechanical Keyboard RGB",
+                sku = "SKU-KB-870",
+                regularPrice = 149.50,
+                salePrice = 119.50,
+                stockStatus = "instock",
+                stockQuantity = 8,
+                category = "Electronics",
+                productType = "Variable Product",
+                salesCount = 35
+            ),
+            ProductEntity(
+                id = "${siteId}_prod_4",
+                siteId = siteId,
+                name = "Organic Cotton Oversized Hoodie",
+                sku = "SKU-HD-204",
+                regularPrice = 68.00,
+                salePrice = null,
+                stockStatus = "instock",
+                stockQuantity = 30,
+                category = "Apparel",
+                productType = "Variable Product",
+                salesCount = 56
+            )
+        )
+        productDao.insertProducts(sampleProducts)
+
+        val sampleOrders = listOf(
+            OrderEntity(
+                id = "${siteId}_ord_1024",
+                siteId = siteId,
+                orderNumber = "#1024",
+                customerName = "Sarah Jenkins",
+                customerEmail = "sarah.j@example.com",
+                status = "processing",
+                totalAmount = 199.98,
+                currency = "$",
+                itemsSummary = "2 x AeroFit Wireless Earbuds Pro",
+                paymentMethod = "Stripe / Credit Card",
+                shippingCity = "San Francisco, USA",
+                dateFormatted = "Just now"
+            ),
+            OrderEntity(
+                id = "${siteId}_ord_1023",
+                siteId = siteId,
+                orderNumber = "#1023",
+                customerName = "Marcus Vance",
+                customerEmail = "m.vance@example.com",
+                status = "completed",
+                totalAmount = 189.00,
+                currency = "$",
+                itemsSummary = "1 x Urban Leather Weekend Duffel Bag",
+                paymentMethod = "Apple Pay",
+                shippingCity = "New York, USA",
+                dateFormatted = "2 hours ago"
+            ),
+            OrderEntity(
+                id = "${siteId}_ord_1022",
+                siteId = siteId,
+                orderNumber = "#1022",
+                customerName = "Elena Rostova",
+                customerEmail = "elena.r@example.com",
+                status = "completed",
+                totalAmount = 119.50,
+                currency = "$",
+                itemsSummary = "1 x Minimalist Mechanical Keyboard RGB",
+                paymentMethod = "PayPal",
+                shippingCity = "London, UK",
+                dateFormatted = "Yesterday"
+            ),
+            OrderEntity(
+                id = "${siteId}_ord_1021",
+                siteId = siteId,
+                orderNumber = "#1021",
+                customerName = "Liam Gallagher",
+                customerEmail = "liam.g@example.com",
+                status = "completed",
+                totalAmount = 136.00,
+                currency = "$",
+                itemsSummary = "2 x Organic Cotton Oversized Hoodie",
+                paymentMethod = "Google Pay",
+                shippingCity = "Toronto, Canada",
+                dateFormatted = "Sep 28, 2026"
+            )
+        )
+        orderDao.insertOrders(sampleOrders)
+
+        val sampleCustomers = listOf(
+            CustomerEntity(
+                id = "${siteId}_cust_1",
+                siteId = siteId,
+                name = "Sarah Jenkins",
+                email = "sarah.j@example.com",
+                role = "Customer",
+                totalSpent = 430.00,
+                ordersCount = 3,
+                lastActive = "Active 5m ago",
+                avatarInitials = "SJ"
+            ),
+            CustomerEntity(
+                id = "${siteId}_cust_2",
+                siteId = siteId,
+                name = "Marcus Vance",
+                email = "m.vance@example.com",
+                role = "Customer",
+                totalSpent = 380.00,
+                ordersCount = 2,
+                lastActive = "Active today",
+                avatarInitials = "MV"
+            ),
+            CustomerEntity(
+                id = "${siteId}_cust_3",
+                siteId = siteId,
+                name = "Elena Rostova",
+                email = "elena.r@example.com",
+                role = "Customer",
+                totalSpent = 620.00,
+                ordersCount = 4,
+                lastActive = "Yesterday",
+                avatarInitials = "ER"
+            ),
+            CustomerEntity(
+                id = "${siteId}_cust_4",
+                siteId = siteId,
+                name = authorName,
+                email = "admin@${siteName.lowercase().replace(" ", "")}.com",
+                role = "Administrator",
+                totalSpent = 0.0,
+                ordersCount = 0,
+                lastActive = "Active Now",
+                avatarInitials = authorName.take(2).uppercase()
+            )
+        )
+        customerDao.insertCustomers(sampleCustomers)
+
+        val samplePlugins = listOf(
+            PluginEntity(
+                id = "${siteId}_plug_wc",
+                siteId = siteId,
+                name = "WooCommerce",
+                slug = "woocommerce",
+                version = "8.9.2",
+                updateAvailable = false,
+                isActive = true,
+                author = "Automattic",
+                description = "An ecommerce toolkit that helps you sell anything. Beautifully."
+            ),
+            PluginEntity(
+                id = "${siteId}_plug_yoast",
+                siteId = siteId,
+                name = "Yoast SEO Pro",
+                slug = "wordpress-seo",
+                version = "22.6",
+                updateAvailable = true,
+                newVersion = "22.8",
+                isActive = true,
+                author = "Team Yoast",
+                description = "All-in-one SEO solution for WordPress, including on-page content analysis and XML sitemaps."
+            ),
+            PluginEntity(
+                id = "${siteId}_plug_sec",
+                siteId = siteId,
+                name = "Wordfence Security",
+                slug = "wordfence",
+                version = "7.11.5",
+                updateAvailable = false,
+                isActive = true,
+                author = "Wordfence",
+                description = "Anti-virus, Firewall and High Speed Scanning for your WordPress site."
+            ),
+            PluginEntity(
+                id = "${siteId}_plug_elementor",
+                siteId = siteId,
+                name = "Elementor Website Builder",
+                slug = "elementor",
+                version = "3.21.4",
+                updateAvailable = false,
+                isActive = true,
+                author = "Elementor.com",
+                description = "The most advanced drag & drop live page builder."
+            )
+        )
+        pluginDao.insertPlugins(samplePlugins)
+
+        val sampleCoupons = listOf(
+            CouponEntity(
+                id = "${siteId}_coup_1",
+                siteId = siteId,
+                code = "WELCOME20",
+                discountType = "Percentage (20%)",
+                discountValue = 20.0,
+                usageCount = 14,
+                usageLimit = 100,
+                expiryDate = "Active"
+            ),
+            CouponEntity(
+                id = "${siteId}_coup_2",
+                siteId = siteId,
+                code = "FREESHIP",
+                discountType = "Fixed Cart ($15)",
+                discountValue = 15.0,
+                usageCount = 8,
+                usageLimit = 50,
+                expiryDate = "Active"
+            )
+        )
+        couponDao.insertCoupons(sampleCoupons)
+
+        // Update site totals in database
+        val site = siteDao.getSiteById(siteId)
+        if (site != null) {
+            val updated = site.copy(
+                hasWooCommerce = true,
+                totalSales = 644.48,
+                totalPosts = 3,
+                totalPages = 3,
+                totalCategories = 3,
+                totalComments = 8,
+                totalOrders = 4,
+                visitorsToday = 472,
+                restApiStatus = "Connected (REST v2 • Active Handshake)"
+            )
+            siteDao.updateSite(updated)
+            inspectAndAutoDesignDashboard(siteId)
         }
     }
 }
