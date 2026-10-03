@@ -174,16 +174,15 @@ class WordPressLogInterceptor(
                 val parts = decoded.split(":", limit = 2)
                 if (parts.size == 2) {
                     val user = parts[0]
-                    val passMasked = "•".repeat(parts[1].length.coerceAtMost(8))
-                    "Basic $rawBase64 [Decoded: $user:$passMasked]"
+                    "Basic [PROTECTED_USER: $user, PASSWORD: ••••••••]"
                 } else {
-                    "Basic $rawBase64 [Decoded: $decoded]"
+                    "Basic [PROTECTED_CREDENTIALS]"
                 }
             } catch (e: Exception) {
-                "Basic ${rawBase64.take(10)}..."
+                "Basic [PROTECTED_CREDENTIALS]"
             }
         } else {
-            authHeader.take(15) + "..."
+            "Bearer [PROTECTED_TOKEN]"
         }
     }
 

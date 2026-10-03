@@ -258,6 +258,7 @@ private fun WidgetCustomizerRow(
 ) {
     val icon = when (widget.widgetKey) {
         "site_banner" -> Icons.Default.Web
+        "connection_health" -> Icons.Default.Dns
         "quick_stats" -> Icons.Default.Analytics
         "fast_actions" -> Icons.Default.FlashOn
         "woo_sales" -> Icons.Default.TrendingUp
@@ -268,7 +269,6 @@ private fun WidgetCustomizerRow(
         "theme_overview" -> Icons.Default.Palette
         "plugins_health" -> Icons.Default.Extension
         "crm_inquiries" -> Icons.Default.ContactMail
-        "telemetry_iot" -> Icons.Default.WaterDrop
         "rest_api" -> Icons.Default.Api
         else -> Icons.Default.Widgets
     }

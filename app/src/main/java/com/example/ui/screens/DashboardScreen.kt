@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.*
 import com.example.ui.HubTab
+import com.example.ui.components.ConnectionHealthCard
 import com.example.ui.components.WooCommerceRechartsSalesCard
 import com.example.ui.theme.*
 import java.text.NumberFormat
@@ -46,7 +47,6 @@ fun DashboardScreen(
     posts: List<PostEntity> = emptyList(),
     plugins: List<PluginEntity> = emptyList(),
     customers: List<CustomerEntity> = emptyList(),
-    waterTelemetry: WaterTelemetryEntity? = null,
     dashboardWidgets: List<DashboardWidgetEntity> = emptyList(),
     notifications: List<NotificationItemEntity> = emptyList(),
     isRefreshing: Boolean = false,
@@ -60,6 +60,8 @@ fun DashboardScreen(
     onOrderStatusChange: (String, String) -> Unit,
     onSyncClick: () -> Unit,
     onConnectSiteClick: () -> Unit = {},
+    onReconnectSite: (() -> Unit)? = null,
+    onOpenAuthDiagnostics: (() -> Unit)? = null,
     onSimulateOrder: (() -> Unit)? = null
 ) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.US) }
@@ -112,13 +114,70 @@ fun DashboardScreen(
                     onOpenTroubleshooter = { onNavigateTab(HubTab.TOOLS) }
                 )
             }
-        } else if (activeWidgets.isEmpty()) {
+        } else {
+            if (currentSite.isAuthenticated == false || currentSite.restApiStatus.contains("401")) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = com.example.ui.theme.RoseErrorBg),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.RoseError.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onReconnectSite?.invoke() }
+                            .testTag("banner_401_reconnect")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.VpnKeyOff,
+                                contentDescription = null,
+                                tint = com.example.ui.theme.RoseError,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "HTTP 401: Credentials Rejected",
+                                    fontWeight = FontWeight.Bold,
+                                    color = com.example.ui.theme.RoseError,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "Application password or token failed for ${currentSite.name}. Tap to reconnect.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = com.example.ui.theme.RoseError.copy(alpha = 0.85f),
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Button(
+                                onClick = { onReconnectSite?.invoke() },
+                                colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.RoseError),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Reconnect", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (activeWidgets.isEmpty()) {
             // Default fallback if widgets not yet loaded
             item {
                 SiteBannerWidget(
                     currentSite = currentSite,
                     onCustomizeClick = onOpenDashboardCustomizer,
                     onSyncClick = onSyncClick
+                )
+            }
+            item {
+                ConnectionHealthCard(
+                    currentSite = currentSite,
+                    onReconnectSite = onReconnectSite,
+                    onViewRestLogs = { onOpenAuthDiagnostics?.invoke() ?: onNavigateTab(HubTab.TOOLS) }
                 )
             }
             item {
@@ -150,6 +209,13 @@ fun DashboardScreen(
                             currentSite = currentSite,
                             onCustomizeClick = onOpenDashboardCustomizer,
                             onSyncClick = onSyncClick
+                        )
+                    }
+                    "connection_health" -> item(key = widget.id) {
+                        ConnectionHealthCard(
+                            currentSite = currentSite,
+                            onReconnectSite = onReconnectSite,
+                            onViewRestLogs = { onOpenAuthDiagnostics?.invoke() ?: onNavigateTab(HubTab.TOOLS) }
                         )
                     }
                     "quick_stats" -> item(key = widget.id) {
@@ -234,12 +300,6 @@ fun DashboardScreen(
                             onOpenCrm = { onNavigateTab(HubTab.CRM) }
                         )
                     }
-                    "telemetry_iot" -> item(key = widget.id) {
-                        TelemetryWidget(
-                            telemetry = waterTelemetry,
-                            onOpenTools = { onNavigateTab(HubTab.TOOLS) }
-                        )
-                    }
                     "rest_api" -> item(key = widget.id) {
                         RestApiDiagnosticWidget(
                             currentSite = currentSite,
@@ -314,6 +374,7 @@ fun DashboardScreen(
         item {
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
     }
 }
 }
@@ -1237,48 +1298,6 @@ private fun CrmInquiriesWidget(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun TelemetryWidget(
-    telemetry: WaterTelemetryEntity?,
-    onOpenTools: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSlate200),
-        modifier = Modifier.fillMaxWidth().testTag("widget_telemetry")
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.WaterDrop, contentDescription = null, tint = PrimaryIndigo, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Operations & IoT Telemetry",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TextDark
-                    )
-                }
-                TextButton(onClick = onOpenTools, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                    Text("Controls →", color = PrimaryIndigo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "${telemetry?.facilityName ?: "Facility Hub"} • Level: ${telemetry?.tankLevelPercent ?: 78}% • Pressure: ${telemetry?.pressurePsi ?: 46.5} PSI",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextBodyMuted,
-                fontSize = 12.sp
-            )
         }
     }
 }

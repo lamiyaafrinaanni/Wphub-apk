@@ -20,6 +20,7 @@ import com.example.ui.components.NotificationsCenterSheet
 import com.example.ui.components.SiteSwitcherSheet
 import com.example.ui.components.WPHubNavigationDrawerContent
 import com.example.ui.components.WPHubTopBar
+import com.example.ui.components.ReconnectSiteDialog
 import com.example.ui.components.WordPressLoginDialog
 import com.example.ui.screens.*
 
@@ -46,13 +47,16 @@ fun WPHubApp(viewModel: WPHubViewModel) {
     val hasWooCommerce by viewModel.hasWooCommerce.collectAsStateWithLifecycle()
     val dashboardWidgets by viewModel.dashboardWidgets.collectAsStateWithLifecycle()
 
+    val showReconnectDialog by viewModel.showReconnectDialog.collectAsStateWithLifecycle()
+    val reconnectSite by viewModel.reconnectSite.collectAsStateWithLifecycle()
+
     val posts by viewModel.posts.collectAsStateWithLifecycle()
     val products by viewModel.products.collectAsStateWithLifecycle()
     val orders by viewModel.orders.collectAsStateWithLifecycle()
     val customers by viewModel.customers.collectAsStateWithLifecycle()
     val plugins by viewModel.plugins.collectAsStateWithLifecycle()
     val coupons by viewModel.coupons.collectAsStateWithLifecycle()
-    val waterTelemetry by viewModel.waterTelemetry.collectAsStateWithLifecycle()
+    val reconnectErrorMessage by viewModel.reconnectErrorMessage.collectAsStateWithLifecycle()
 
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val unreadNotificationCount by viewModel.unreadNotificationCount.collectAsStateWithLifecycle()
@@ -75,6 +79,8 @@ fun WPHubApp(viewModel: WPHubViewModel) {
     var showLoginDialog by remember { mutableStateOf(false) }
     var showGlobalEditorDialog by remember { mutableStateOf(false) }
     var showGlobalAddProductDialog by remember { mutableStateOf(false) }
+    var showAuthDiagnosticsSheet by remember { mutableStateOf(false) }
+    var showOAuthHandshakeSheet by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -231,7 +237,6 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                                 posts = posts,
                                 plugins = plugins,
                                 customers = customers,
-                                waterTelemetry = waterTelemetry,
                                 dashboardWidgets = dashboardWidgets,
                                 notifications = notifications,
                                 isRefreshing = isSyncing,
@@ -249,6 +254,8 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                                 onOrderStatusChange = { id, status -> viewModel.updateOrderStatus(id, status) },
                                 onSyncClick = { viewModel.syncCurrentSite() },
                                 onConnectSiteClick = { appScreen = AppScreen.LOGIN },
+                                onReconnectSite = { viewModel.triggerReconnectDialog() },
+                                onOpenAuthDiagnostics = { showAuthDiagnosticsSheet = true },
                                 onSimulateOrder = { viewModel.triggerSimulatedOrderAlert() }
                             )
                         }
@@ -320,7 +327,6 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                         HubTab.TOOLS -> {
                             ToolsScreen(
                                 plugins = plugins,
-                                waterTelemetry = waterTelemetry,
                                 notificationSettings = notificationSettings,
                                 currentSite = currentSite,
                                 allSites = allSites,
@@ -347,8 +353,6 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                                 onTriggerTestInquiryAlert = { viewModel.triggerSimulatedInquiryAlert() },
                                 onTogglePlugin = { id, active -> viewModel.togglePlugin(id, active) },
                                 onUpdatePlugin = { id, newVer -> viewModel.updatePlugin(id, newVer) },
-                                onToggleWaterPump = { viewModel.toggleWaterPump() },
-                                onToggleWaterAutoMode = { viewModel.toggleWaterAutoMode() },
                                 onShowMessage = { viewModel.showMessage(it) }
                             )
                         }
@@ -506,6 +510,62 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                         viewModel.resetDashboardToAutoDesigned()
                     }
                 )
+            }
+
+            // Reconnect Site Dialog (HTTP 401 Error Recovery)
+            if (showReconnectDialog && reconnectSite != null) {
+                ReconnectSiteDialog(
+                    site = reconnectSite!!,
+                    isSubmitting = isSyncing,
+                    errorMessage = reconnectErrorMessage,
+                    onDismiss = { viewModel.dismissReconnectDialog() },
+                    onReconnect = { username, appPassword ->
+                        viewModel.updateSiteCredentials(
+                            siteId = reconnectSite!!.id,
+                            username = username,
+                            appPasswordToken = appPassword
+                        )
+                    },
+                    onRemoveSite = {
+                        viewModel.dismissReconnectDialog()
+                        viewModel.logoutCurrentSite()
+                    }
+                )
+            }
+
+            // 401 Raw Auth Logs & Diagnostic Sheet
+            if (showAuthDiagnosticsSheet) {
+                androidx.compose.ui.window.Dialog(
+                    onDismissRequest = { showAuthDiagnosticsSheet = false },
+                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    AuthDiagnosticsScreen(
+                        currentSite = currentSite,
+                        onBackClick = { showAuthDiagnosticsSheet = false },
+                        onReconnectClick = {
+                            showAuthDiagnosticsSheet = false
+                            viewModel.triggerReconnectDialog()
+                        },
+                        onOpenHandshakeTrace = { showOAuthHandshakeSheet = true }
+                    )
+                }
+            }
+
+            // OAuth & Application Password Handshake Trace Inspector
+            if (showOAuthHandshakeSheet) {
+                androidx.compose.ui.window.Dialog(
+                    onDismissRequest = { showOAuthHandshakeSheet = false },
+                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    com.example.ui.screens.OAuthHandshakeDiagnosticsScreen(
+                        currentSite = currentSite,
+                        onBackClick = { showOAuthHandshakeSheet = false },
+                        onReconnectClick = {
+                            showOAuthHandshakeSheet = false
+                            viewModel.triggerReconnectDialog()
+                        }
+                    )
+                }
             }
             }
         }

@@ -17,6 +17,12 @@ interface SiteDao {
     @Query("SELECT * FROM sites WHERE id = :siteId LIMIT 1")
     suspend fun getSiteById(siteId: String): SiteEntity?
 
+    @Query("SELECT * FROM sites")
+    suspend fun getAllSitesDirect(): List<SiteEntity>
+
+    @Query("SELECT * FROM sites WHERE url = :url OR url = :cleanUrl OR url = :urlWithSlash LIMIT 1")
+    suspend fun getSiteByUrl(url: String, cleanUrl: String, urlWithSlash: String): SiteEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSites(sites: List<SiteEntity>)
 
@@ -32,7 +38,7 @@ interface SiteDao {
     @Query("DELETE FROM sites WHERE id = :siteId")
     suspend fun deleteSite(siteId: String)
 
-    @Query("DELETE FROM sites WHERE id LIKE '%demo%' OR url LIKE '%.local%' OR name LIKE '%Demo%'")
+    @Query("DELETE FROM sites WHERE id = 'site_demo_store_123' OR id = 'demo_site_seed'")
     suspend fun deleteDemoSites()
 
     @Query("DELETE FROM sites")
@@ -172,24 +178,6 @@ interface CouponDao {
 }
 
 @Dao
-interface WaterTelemetryDao {
-    @Query("SELECT * FROM water_telemetry WHERE siteId = :siteId LIMIT 1")
-    fun getTelemetryForSite(siteId: String): Flow<WaterTelemetryEntity?>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertTelemetry(telemetry: WaterTelemetryEntity)
-
-    @Update
-    suspend fun updateTelemetry(telemetry: WaterTelemetryEntity)
-
-    @Query("DELETE FROM water_telemetry WHERE siteId = :siteId")
-    suspend fun deleteTelemetryForSite(siteId: String)
-
-    @Query("DELETE FROM water_telemetry")
-    suspend fun clearAllTelemetry()
-}
-
-@Dao
 interface NotificationDao {
     @Query("SELECT * FROM notifications WHERE siteId = :siteId ORDER BY timestamp DESC")
     fun getNotificationsForSite(siteId: String): Flow<List<NotificationItemEntity>>
@@ -229,6 +217,9 @@ interface NotificationSettingsDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateSettings(settings: NotificationSettingsEntity)
+
+    @Query("DELETE FROM notification_settings WHERE siteId = :siteId")
+    suspend fun deleteSettingsForSite(siteId: String)
 
     @Query("DELETE FROM notification_settings")
     suspend fun clearAllSettings()

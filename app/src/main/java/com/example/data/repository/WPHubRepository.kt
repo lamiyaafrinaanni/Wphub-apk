@@ -3,11 +3,13 @@ package com.example.data.repository
 import android.util.Log
 import com.example.data.local.*
 import com.example.data.remote.WordPressRestClient
+import com.example.data.security.SecureCredentialsVault
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -20,7 +22,6 @@ class WPHubRepository(private val db: AppDatabase) {
     private val customerDao = db.customerDao()
     private val pluginDao = db.pluginDao()
     private val couponDao = db.couponDao()
-    private val telemetryDao = db.waterTelemetryDao()
     private val notificationDao = db.notificationDao()
     private val notificationSettingsDao = db.notificationSettingsDao()
     private val widgetDao = db.dashboardWidgetDao()
@@ -37,6 +38,8 @@ class WPHubRepository(private val db: AppDatabase) {
     fun getAllSites(): Flow<List<SiteEntity>> = siteDao.getAllSites()
     fun getCurrentSite(): Flow<SiteEntity?> = siteDao.getCurrentSite()
 
+    suspend fun getSiteById(siteId: String): SiteEntity? = siteDao.getSiteById(siteId)
+
     suspend fun switchSite(siteId: String) {
         siteDao.setCurrentSite(siteId)
     }
@@ -47,7 +50,8 @@ class WPHubRepository(private val db: AppDatabase) {
         tokenOrPass: String,
         onStepUpdate: (com.example.data.remote.LiveVerificationStep) -> Unit = {}
     ): com.example.data.remote.MultiStepConnectionResult {
-        return restClient.performLiveConnectionChecks(siteUrl, username, tokenOrPass, onStepUpdate)
+        val decryptedToken = SecureCredentialsVault.decrypt(tokenOrPass)
+        return restClient.performLiveConnectionChecks(siteUrl, username, decryptedToken, onStepUpdate)
     }
 
     suspend fun runSimpleRestConnectionTest(siteUrl: String): com.example.data.remote.RestTestResult {
@@ -63,26 +67,78 @@ class WPHubRepository(private val db: AppDatabase) {
         role: String = "Administrator",
         displayName: String? = null
     ): SiteEntity {
-        val cleanUrl = if (!siteUrl.startsWith("http://") && !siteUrl.startsWith("https://")) {
-            "https://$siteUrl"
-        } else siteUrl
+        val cleanUrl = siteUrl.trim().removeSuffix("/").let {
+            if (!it.startsWith("http://") && !it.startsWith("https://")) "https://$it" else it
+        }
+        val urlWithSlash = "$cleanUrl/"
 
-        val targetSiteId = siteId ?: "site_${System.currentTimeMillis()}"
-
-        // Unset current flag on existing active site
-        val current = siteDao.getCurrentSiteDirect()
-        if (current != null && current.id != targetSiteId) {
-            siteDao.updateSite(current.copy(isCurrent = false))
+        // 1. Look up existing site record by ID or URL to prevent duplicate site entries
+        var existingSite = if (!siteId.isNullOrBlank()) siteDao.getSiteById(siteId) else null
+        if (existingSite == null) {
+            existingSite = siteDao.getSiteByUrl(siteUrl, cleanUrl, urlWithSlash)
         }
 
-        // Live WordPress REST API Synchronous Fetch
+        val targetSiteId = existingSite?.id ?: (siteId ?: "site_${System.currentTimeMillis()}")
+
+        // 2. Prevent duplicate entries: purge any duplicate site records matching cleanUrl with a different ID
+        val allSites = siteDao.getAllSitesDirect()
+        allSites.filter { s ->
+            s.id != targetSiteId && (
+                s.url.equals(cleanUrl, ignoreCase = true) ||
+                s.url.equals(urlWithSlash, ignoreCase = true) ||
+                s.url.trimEnd('/').equals(cleanUrl, ignoreCase = true)
+            )
+        }.forEach { duplicate ->
+            Log.w("WPHubRepository", "Purging duplicate site record: ${duplicate.id} (${duplicate.url})")
+            siteDao.deleteSite(duplicate.id)
+        }
+
+        // 3. Mark all other sites as non-current
+        allSites.filter { it.id != targetSiteId && it.isCurrent }.forEach { s ->
+            siteDao.updateSite(s.copy(isCurrent = false))
+        }
+
+        // 4. Construct / update existing site record with encrypted credentials
+        val encryptedToken = SecureCredentialsVault.encrypt(passwordOrToken)
+        val updatedBaseSite = (existingSite ?: SiteEntity(
+            id = targetSiteId,
+            name = siteName.ifBlank { "Connected WordPress Site" },
+            url = cleanUrl,
+            iconEmoji = "🌐",
+            sslEnabled = cleanUrl.startsWith("https"),
+            restApiStatus = "Connecting to REST API...",
+            isCurrent = true,
+            username = usernameOrEmail,
+            userEmail = "$usernameOrEmail@${cleanUrl.removePrefix("https://").removePrefix("http://")}",
+            userDisplayName = displayName ?: usernameOrEmail,
+            userRole = role,
+            appPasswordToken = encryptedToken,
+            isAuthenticated = false,
+            hasWooCommerce = true
+        )).copy(
+            name = if (siteName.isNotBlank() && siteName != "Connected WordPress Site") siteName else (existingSite?.name ?: "Connected WordPress Site"),
+            url = cleanUrl,
+            username = usernameOrEmail,
+            appPasswordToken = encryptedToken,
+            userDisplayName = displayName ?: usernameOrEmail,
+            userRole = role,
+            isCurrent = true
+        )
+
+        siteDao.insertSite(updatedBaseSite)
+
+        // Clear invalid/stale 401 log records upon successful reconnect
+        com.example.data.remote.WordPress401LogStore.clearLogs()
+
+        // 5. Live WordPress REST API Synchronous Fetch using plain token
+        val plainToken = SecureCredentialsVault.decrypt(passwordOrToken)
         val syncResult = try {
             restClient.syncAllWordPressData(
                 siteId = targetSiteId,
                 siteUrl = cleanUrl,
                 username = usernameOrEmail,
-                tokenOrPass = passwordOrToken,
-                fallbackDisplayName = displayName ?: siteName,
+                tokenOrPass = plainToken,
+                fallbackDisplayName = displayName ?: updatedBaseSite.userDisplayName,
                 fallbackRole = role
             )
         } catch (e: Exception) {
@@ -91,86 +147,52 @@ class WPHubRepository(private val db: AppDatabase) {
         }
 
         if (syncResult != null) {
-            // Save all live WordPress records into Room Database
-            if (syncResult.posts.isNotEmpty()) {
-                postDao.insertPosts(syncResult.posts)
-            }
-            if (syncResult.products.isNotEmpty()) {
-                productDao.insertProducts(syncResult.products)
-            }
-            if (syncResult.orders.isNotEmpty()) {
-                orderDao.insertOrders(syncResult.orders)
-            }
-            if (syncResult.customers.isNotEmpty()) {
-                customerDao.insertCustomers(syncResult.customers)
-            }
-            if (syncResult.plugins.isNotEmpty()) {
-                pluginDao.insertPlugins(syncResult.plugins)
-            }
-            if (syncResult.coupons.isNotEmpty()) {
-                couponDao.insertCoupons(syncResult.coupons)
-            }
+            if (syncResult.posts.isNotEmpty()) postDao.insertPosts(syncResult.posts)
+            if (syncResult.products.isNotEmpty()) productDao.insertProducts(syncResult.products)
+            if (syncResult.orders.isNotEmpty()) orderDao.insertOrders(syncResult.orders)
+            if (syncResult.customers.isNotEmpty()) customerDao.insertCustomers(syncResult.customers)
+            if (syncResult.plugins.isNotEmpty()) pluginDao.insertPlugins(syncResult.plugins)
+            if (syncResult.coupons.isNotEmpty()) couponDao.insertCoupons(syncResult.coupons)
 
-            siteDao.insertSite(syncResult.site)
-            if (syncResult.posts.isEmpty()) {
-                seedInitialSiteDataIfEmpty(targetSiteId, syncResult.site.name, syncResult.site.userDisplayName)
-            } else {
-                inspectAndAutoDesignDashboard(targetSiteId)
-            }
-            return siteDao.getSiteById(targetSiteId) ?: syncResult.site
-        } else {
-            // Fallback offline entity if network call failed
-            val fallbackSite = SiteEntity(
+            val mergedSite = syncResult.site.copy(
                 id = targetSiteId,
-                name = siteName.ifBlank { "Connected WordPress Site" },
-                url = cleanUrl,
-                iconEmoji = "🌐",
-                sslEnabled = cleanUrl.startsWith("https"),
-                restApiStatus = "Connected (WP REST v2 • $usernameOrEmail)",
-                isCurrent = true,
-                totalSales = 644.48,
-                totalPosts = 3,
-                totalPages = 3,
-                totalCategories = 3,
-                totalComments = 8,
-                totalOrders = 4,
-                visitorsToday = 472,
-                lastSyncTime = "Just now",
                 username = usernameOrEmail,
-                userEmail = "$usernameOrEmail@${cleanUrl.removePrefix("https://").removePrefix("http://")}",
-                userDisplayName = displayName ?: usernameOrEmail,
-                userRole = role,
-                appPasswordToken = passwordOrToken,
+                appPasswordToken = encryptedToken,
                 isAuthenticated = true,
-                siteType = "ecommerce",
-                hasWooCommerce = true,
-                activeTheme = "Astra Pro",
-                activeThemeVersion = "4.6.2",
-                wpVersion = "6.6.2",
-                phpVersion = "8.2",
-                tagline = "WordPress Store & Publishing Hub"
+                isCurrent = true,
+                restApiStatus = "Connected (WP REST v2 • $usernameOrEmail)"
             )
-            siteDao.insertSite(fallbackSite)
-            seedInitialSiteDataIfEmpty(targetSiteId, fallbackSite.name, fallbackSite.userDisplayName)
-            return siteDao.getSiteById(targetSiteId) ?: fallbackSite
+            siteDao.updateSite(mergedSite)
+            inspectAndAutoDesignDashboard(targetSiteId)
+            return siteDao.getSiteById(targetSiteId) ?: mergedSite
+        } else {
+            // Connection failed: do NOT fabricate fake data or mark connected!
+            val failedSite = updatedBaseSite.copy(
+                appPasswordToken = encryptedToken,
+                isAuthenticated = false,
+                restApiStatus = "Connection Failed (Invalid Credentials or REST API unreachable)"
+            )
+            siteDao.updateSite(failedSite)
+            throw IOException("Failed to connect to WordPress REST API at $cleanUrl. Please verify your credentials.")
         }
     }
 
     suspend fun syncLiveSiteData(siteId: String): String {
         val site = siteDao.getSiteById(siteId) ?: return "Site not found"
-        if (site.username.isNotBlank() && site.appPasswordToken.isNotBlank()) {
+        val decryptedToken = SecureCredentialsVault.decrypt(site.appPasswordToken)
+        if (site.username.isNotBlank() && decryptedToken.isNotBlank()) {
             val syncResult = try {
                 restClient.syncAllWordPressData(
                     siteId = site.id,
                     siteUrl = site.url,
                     username = site.username,
-                    tokenOrPass = site.appPasswordToken,
+                    tokenOrPass = decryptedToken,
                     fallbackDisplayName = site.userDisplayName,
                     fallbackRole = site.userRole
                 )
             } catch (e: com.example.data.remote.WordPressUnauthorizedException) {
-                Log.e("WPHubRepository", "Session Expired (401). Purging site credentials & logging out automatically.")
-                logoutSite(site.id)
+                Log.e("WPHubRepository", "Session Expired (401). Marking site unauthenticated for reconnect dialog.")
+                markSiteUnauthenticated(site.id)
                 throw e
             } catch (e: Exception) {
                 Log.e("WPHubRepository", "Error syncing site: ${e.message}")
@@ -213,21 +235,84 @@ class WPHubRepository(private val db: AppDatabase) {
         customerDao.deleteCustomersForSite(siteId)
         pluginDao.deletePluginsForSite(siteId)
         couponDao.deleteCouponsForSite(siteId)
-        telemetryDao.deleteTelemetryForSite(siteId)
         widgetDao.deleteWidgetsForSite(siteId)
         notificationDao.clearAllNotifications(siteId)
+        notificationSettingsDao.deleteSettingsForSite(siteId)
+    }
+
+    suspend fun markSiteUnauthenticated(siteId: String) {
+        val site = siteDao.getSiteById(siteId) ?: return
+        val updated = site.copy(
+            isAuthenticated = false,
+            restApiStatus = "HTTP 401 Unauthorized (Credentials Expired)"
+        )
+        siteDao.updateSite(updated)
+    }
+
+    suspend fun updateSiteCredentials(siteId: String, username: String, appPasswordToken: String) {
+        var site = siteDao.getSiteById(siteId)
+        if (site == null) {
+            site = siteDao.getCurrentSiteDirect() ?: siteDao.getAllSitesDirect().firstOrNull()
+        }
+        if (site == null) return
+
+        val cleanUrl = site.url.trim().removeSuffix("/")
+        val urlWithSlash = "$cleanUrl/"
+
+        // De-duplicate any stray site entries matching URL
+        val allSites = siteDao.getAllSitesDirect()
+        allSites.filter { s ->
+            s.id != site.id && (
+                s.url.equals(cleanUrl, ignoreCase = true) ||
+                s.url.equals(urlWithSlash, ignoreCase = true) ||
+                s.url.trimEnd('/').equals(cleanUrl, ignoreCase = true)
+            )
+        }.forEach { duplicate ->
+            Log.w("WPHubRepository", "Purging duplicate site record: ${duplicate.id} (${duplicate.url})")
+            siteDao.deleteSite(duplicate.id)
+        }
+
+        // Set this site as current and update credentials
+        allSites.filter { it.id != site.id && it.isCurrent }.forEach { s ->
+            siteDao.updateSite(s.copy(isCurrent = false))
+        }
+
+        val encryptedToken = SecureCredentialsVault.encrypt(appPasswordToken)
+        val updated = site.copy(
+            username = username,
+            appPasswordToken = encryptedToken,
+            isAuthenticated = true,
+            isCurrent = true,
+            restApiStatus = "Connected (WP REST v2 • $username)"
+        )
+        siteDao.updateSite(updated)
+
+        // Clear invalid session 401 logs
+        com.example.data.remote.WordPress401LogStore.clearLogs()
+
+        // Sync live data for reconnected site
+        try {
+            syncLiveSiteData(site.id)
+        } catch (e: Exception) {
+            Log.e("WPHubRepository", "Post-credential update sync error: ${e.message}")
+        }
     }
 
     suspend fun addNewSite(name: String, url: String, username: String, appPassword: String): Boolean {
-        loginToWordPressSite(
-            siteId = null,
-            siteUrl = url,
-            siteName = name,
-            usernameOrEmail = username,
-            passwordOrToken = appPassword,
-            role = "Administrator"
-        )
-        return true
+        return try {
+            val site = loginToWordPressSite(
+                siteId = null,
+                siteUrl = url,
+                siteName = name,
+                usernameOrEmail = username,
+                passwordOrToken = appPassword,
+                role = "Administrator"
+            )
+            site.isAuthenticated
+        } catch (e: Exception) {
+            Log.e("WPHubRepository", "Failed to add site: ${e.message}")
+            false
+        }
     }
 
     // Site Inspection & Auto Dashboard Generation Engine
@@ -311,6 +396,20 @@ class WPHubRepository(private val db: AppDatabase) {
                 widgetKey = "site_banner",
                 title = "Site Overview & Health",
                 description = "WordPress core status, active theme, and SSL REST connectivity",
+                isEnabled = true,
+                orderIndex = index++,
+                isWooCommerceOnly = false
+            )
+        )
+
+        // 1b. Connection Health & Diagnostic Ping Widget
+        list.add(
+            DashboardWidgetEntity(
+                id = "${siteId}_w_conn_health",
+                siteId = siteId,
+                widgetKey = "connection_health",
+                title = "Connection Health & Diagnostics",
+                description = "Real-time GET /wp-json/ REST API latency ping, route count, and auth status",
                 isEnabled = true,
                 orderIndex = index++,
                 isWooCommerceOnly = false
@@ -458,20 +557,6 @@ class WPHubRepository(private val db: AppDatabase) {
             )
         )
 
-        // 11. Water & Utility IoT Telemetry (Optional)
-        list.add(
-            DashboardWidgetEntity(
-                id = "${siteId}_w_telemetry",
-                siteId = siteId,
-                widgetKey = "telemetry_iot",
-                title = "Facility & Operations Telemetry",
-                description = "Connected sensor status, reservoir levels, and automated pumps",
-                isEnabled = false, // disabled by default, can be customized
-                orderIndex = index++,
-                isWooCommerceOnly = false
-            )
-        )
-
         return list
     }
 
@@ -563,13 +648,6 @@ class WPHubRepository(private val db: AppDatabase) {
         couponDao.insertCoupon(coupon)
     }
 
-    // Water Telemetry
-    fun getTelemetryForSite(siteId: String): Flow<WaterTelemetryEntity?> = telemetryDao.getTelemetryForSite(siteId)
-
-    suspend fun updateTelemetry(telemetry: WaterTelemetryEntity) {
-        telemetryDao.updateTelemetry(telemetry)
-    }
-
     // Notifications
     fun getNotificationsForSite(siteId: String): Flow<List<NotificationItemEntity>> =
         notificationDao.getNotificationsForSite(siteId)
@@ -616,7 +694,6 @@ class WPHubRepository(private val db: AppDatabase) {
         customerDao.clearAllCustomers()
         pluginDao.clearAllPlugins()
         couponDao.clearAllCoupons()
-        telemetryDao.clearAllTelemetry()
         notificationDao.clearAllNotificationsGlobal()
         widgetDao.clearAllWidgets()
         notificationSettingsDao.clearAllSettings()
@@ -635,20 +712,12 @@ class WPHubRepository(private val db: AppDatabase) {
     }
 
     suspend fun ensureActiveSessionOnStartup() {
-        siteDao.deleteDemoSites()
         val sites = siteDao.getAllSites().firstOrNull() ?: emptyList()
         if (sites.isNotEmpty()) {
             val hasCurrent = sites.any { it.isCurrent && it.isAuthenticated }
             if (!hasCurrent) {
                 val activeSite = sites.firstOrNull { it.isAuthenticated } ?: sites.first()
                 siteDao.setCurrentSite(activeSite.id)
-            }
-            val currentSite = siteDao.getCurrentSiteDirect()
-            if (currentSite != null) {
-                val currentPosts = postDao.getPostsForSite(currentSite.id).firstOrNull() ?: emptyList()
-                if (currentPosts.isEmpty()) {
-                    seedInitialSiteDataIfEmpty(currentSite.id, currentSite.name, currentSite.userDisplayName)
-                }
             }
         }
     }

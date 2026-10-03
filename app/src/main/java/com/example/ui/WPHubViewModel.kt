@@ -63,6 +63,15 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
 
+    private val _showReconnectDialog = MutableStateFlow(false)
+    val showReconnectDialog: StateFlow<Boolean> = _showReconnectDialog.asStateFlow()
+
+    private val _reconnectSite = MutableStateFlow<SiteEntity?>(null)
+    val reconnectSite: StateFlow<SiteEntity?> = _reconnectSite.asStateFlow()
+
+    private val _reconnectErrorMessage = MutableStateFlow<String?>(null)
+    val reconnectErrorMessage: StateFlow<String?> = _reconnectErrorMessage.asStateFlow()
+
     // Deep navigation / item highlighting targets from actionable notifications
     private val _targetOrderId = MutableStateFlow<String?>(null)
     val targetOrderId: StateFlow<String?> = _targetOrderId.asStateFlow()
@@ -112,11 +121,6 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
     val coupons: StateFlow<List<CouponEntity>> = currentSite.flatMapLatest { site ->
         if (site != null) repository.getCouponsForSite(site.id) else flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val waterTelemetry: StateFlow<WaterTelemetryEntity?> = currentSite.flatMapLatest { site ->
-        if (site != null) repository.getTelemetryForSite(site.id) else flowOf(null)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     // Push Notifications
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -607,10 +611,65 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
                 _userMessage.value = msg
             } catch (e: com.example.data.remote.WordPressUnauthorizedException) {
                 _isSyncing.value = false
-                _userMessage.value = "Session Expired: Your WordPress credentials have been changed or revoked. You have been logged out."
+                val siteToReconnect = site
+                _reconnectSite.value = siteToReconnect
+                _showReconnectDialog.value = true
+                _userMessage.value = "HTTP 401 Unauthorized: Connection rejected for ${siteToReconnect.name}. Reconnect dialog opened."
             } catch (e: Exception) {
                 _isSyncing.value = false
                 _userMessage.value = e.message ?: "Failed to sync WordPress data"
+            }
+        }
+    }
+
+    fun triggerReconnectDialog(site: SiteEntity? = currentSite.value) {
+        val target = site ?: currentSite.value
+        if (target != null) {
+            _reconnectErrorMessage.value = null
+            _reconnectSite.value = target
+            _showReconnectDialog.value = true
+        }
+    }
+
+    fun dismissReconnectDialog() {
+        _showReconnectDialog.value = false
+        _reconnectSite.value = null
+        _reconnectErrorMessage.value = null
+    }
+
+    fun updateSiteCredentials(
+        siteId: String,
+        username: String,
+        appPasswordToken: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isSyncing.value = true
+            val site = repository.getSiteById(siteId)
+            val siteUrl = site?.url ?: ""
+
+            val testResult = repository.performLiveConnectionChecks(
+                siteUrl = siteUrl,
+                username = username,
+                tokenOrPass = appPasswordToken
+            )
+
+            if (testResult.isSuccess || testResult.steps.any { it.stepIndex == 3 && it.state == com.example.data.remote.VerificationStepState.SUCCESS }) {
+                repository.updateSiteCredentials(siteId, username, appPasswordToken)
+                _showReconnectDialog.value = false
+                _reconnectSite.value = null
+                _reconnectErrorMessage.value = null
+                _isSyncing.value = false
+                _userMessage.value = "Site reconnected successfully! Syncing live data..."
+                syncCurrentSite()
+                onSuccess()
+            } else {
+                _isSyncing.value = false
+                val errorMsg = testResult.errorMessage ?: "Authentication failed with updated credentials."
+                _reconnectErrorMessage.value = errorMsg
+                _userMessage.value = errorMsg
+                onError(errorMsg)
             }
         }
     }
@@ -873,6 +932,13 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val current = currentSite.value ?: return@launch
             repository.logoutSite(current.id)
+            try {
+                android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                android.webkit.CookieManager.getInstance().flush()
+                android.webkit.WebStorage.getInstance().deleteAllData()
+            } catch (e: Exception) {
+                // Ignore WebView clean failure if running in test environment
+            }
             _userMessage.value = "Logged out from ${current.name}"
         }
     }
@@ -906,6 +972,8 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
             _isSyncing.value = false
             if (success) {
                 _userMessage.value = "Connected to $name via Application Password"
+            } else {
+                _userMessage.value = "Failed to connect to $name. Please verify credentials."
             }
         }
     }
@@ -1039,24 +1107,6 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.saveCoupon(coupon)
             _userMessage.value = "Discount coupon ${coupon.code} created"
-        }
-    }
-
-    fun toggleWaterPump() {
-        viewModelScope.launch {
-            val telemetry = waterTelemetry.value ?: return@launch
-            val updated = telemetry.copy(pumpRunning = !telemetry.pumpRunning)
-            repository.updateTelemetry(updated)
-            _userMessage.value = if (updated.pumpRunning) "Facility Water Pump Started" else "Facility Water Pump Stopped"
-        }
-    }
-
-    fun toggleWaterAutoMode() {
-        viewModelScope.launch {
-            val telemetry = waterTelemetry.value ?: return@launch
-            val updated = telemetry.copy(autoMode = !telemetry.autoMode)
-            repository.updateTelemetry(updated)
-            _userMessage.value = if (updated.autoMode) "IoT Automation Mode: Enabled" else "IoT Automation Mode: Manual Override"
         }
     }
 }

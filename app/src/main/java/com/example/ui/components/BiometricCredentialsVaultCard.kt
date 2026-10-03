@@ -47,7 +47,9 @@ fun BiometricCredentialsVaultCard(
     var isAuthenticating by remember { mutableStateOf(false) }
     val biometricStatus = remember(context) { BiometricAuthManager.checkBiometricAvailability(context) }
 
-    val rawPassword = currentSite?.appPasswordToken ?: ""
+    val rawPassword = remember(currentSite?.appPasswordToken) {
+        com.example.data.security.SecureCredentialsVault.decrypt(currentSite?.appPasswordToken.orEmpty())
+    }
     val maskedPassword = remember(rawPassword) {
         if (rawPassword.length > 8) {
             "${rawPassword.take(4)} •••• •••• ${rawPassword.takeLast(4)}"

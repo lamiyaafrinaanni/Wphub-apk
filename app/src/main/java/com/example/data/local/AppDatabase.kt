@@ -14,12 +14,11 @@ import androidx.room.RoomDatabase
         CustomerEntity::class,
         PluginEntity::class,
         CouponEntity::class,
-        WaterTelemetryEntity::class,
         NotificationItemEntity::class,
         NotificationSettingsEntity::class,
         DashboardWidgetEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,7 +29,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun customerDao(): CustomerDao
     abstract fun pluginDao(): PluginDao
     abstract fun couponDao(): CouponDao
-    abstract fun waterTelemetryDao(): WaterTelemetryDao
     abstract fun notificationDao(): NotificationDao
     abstract fun notificationSettingsDao(): NotificationSettingsDao
     abstract fun dashboardWidgetDao(): DashboardWidgetDao

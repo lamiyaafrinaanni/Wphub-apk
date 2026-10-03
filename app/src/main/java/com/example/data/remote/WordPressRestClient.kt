@@ -110,8 +110,17 @@ data class MultiStepConnectionResult(
 )
 
 sealed class RestTestResult {
-    data class Success(val siteName: String, val namespacesCount: Int, val routesCount: Int) : RestTestResult()
-    data class Error(val message: String) : RestTestResult()
+    data class Success(
+        val siteName: String,
+        val namespacesCount: Int,
+        val routesCount: Int,
+        val latencyMs: Long = 0
+    ) : RestTestResult()
+
+    data class Error(
+        val message: String,
+        val latencyMs: Long = 0
+    ) : RestTestResult()
 }
 
 class WordPressRestClient {
@@ -139,9 +148,11 @@ class WordPressRestClient {
     }
 
     private val logInterceptor = WordPressLogInterceptor()
+    private val loggingAuthenticator = LoggingAuthenticator()
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(logInterceptor)
+        .authenticator(loggingAuthenticator)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
@@ -150,6 +161,7 @@ class WordPressRestClient {
         .build()
 
     suspend fun runSimpleRestConnectionTest(siteUrl: String): RestTestResult = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
         val cleanUrl = siteUrl.trim().trimEnd('/').let {
             if (!it.startsWith("http://") && !it.startsWith("https://")) "https://$it" else it
         }
@@ -160,6 +172,7 @@ class WordPressRestClient {
             .build()
         try {
             client.newCall(request).execute().use { response ->
+                val elapsed = System.currentTimeMillis() - startTime
                 val body = response.body?.string() ?: ""
                 if (response.isSuccessful && body.isNotBlank()) {
                     try {
@@ -170,19 +183,20 @@ class WordPressRestClient {
                             val name = json.optString("name", "WordPress Site")
                             val nsCount = json.optJSONArray("namespaces")?.length() ?: 0
                             val routesCount = json.optJSONObject("routes")?.length() ?: 0
-                            RestTestResult.Success(name, nsCount, routesCount)
+                            RestTestResult.Success(name, nsCount, routesCount, elapsed)
                         } else {
-                            RestTestResult.Error("Missing standard WordPress structure: 'namespaces' or 'routes' fields were not found. This might not be a WordPress site.")
+                            RestTestResult.Error("Missing standard WordPress structure: 'namespaces' or 'routes' fields were not found.", elapsed)
                         }
                     } catch (je: Exception) {
-                        RestTestResult.Error("Malformed JSON response. Response was not a valid WordPress REST index: ${je.message}")
+                        RestTestResult.Error("Malformed JSON response: ${je.message}", elapsed)
                     }
                 } else {
-                    RestTestResult.Error("HTTP Error ${response.code}: ${response.message}")
+                    RestTestResult.Error("HTTP Error ${response.code}: ${response.message}", elapsed)
                 }
             }
         } catch (e: Exception) {
-            RestTestResult.Error("Failed to connect to /wp-json/: ${e.message}")
+            val elapsed = System.currentTimeMillis() - startTime
+            RestTestResult.Error("Failed to connect to /wp-json/: ${e.message}", elapsed)
         }
     }
 
@@ -485,7 +499,7 @@ class WordPressRestClient {
                                     category = categoryName,
                                     dateFormatted = dateFormatted,
                                     commentCount = comments,
-                                    viewCount = (15..280).random(),
+                                    viewCount = 0,
                                     featuredImageUrl = featuredImageUrl
                                 )
                             )
@@ -669,7 +683,7 @@ class WordPressRestClient {
                                         category = catName,
                                         productType = "$pType Product",
                                         imageUrl = imgUrl,
-                                        salesCount = (1..30).random()
+                                        salesCount = pObj.optInt("total_sales", 0)
                                     )
                                 )
                             }
@@ -914,7 +928,7 @@ class WordPressRestClient {
             totalCategories = totalCategoriesCount,
             totalComments = totalCommentsCount,
             totalOrders = ordersList.size,
-            visitorsToday = (45..350).random(),
+            visitorsToday = 0,
             lastSyncTime = "Just now",
             username = username,
             userEmail = resolvedUserEmail,
@@ -924,10 +938,10 @@ class WordPressRestClient {
             isAuthenticated = true,
             siteType = if (isWooCommerceActive) "ecommerce" else "blog",
             hasWooCommerce = isWooCommerceActive,
-            activeTheme = "WordPress Active Theme",
-            activeThemeVersion = "1.0",
+            activeTheme = "",
+            activeThemeVersion = "",
             wpVersion = discovery.wpVersion,
-            phpVersion = "8.2",
+            phpVersion = "",
             tagline = tagline,
             siteInspectionReport = reportSummary
         )
