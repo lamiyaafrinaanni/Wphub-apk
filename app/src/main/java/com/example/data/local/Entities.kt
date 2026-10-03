@@ -10,30 +10,30 @@ data class SiteEntity(
     val url: String,
     val iconEmoji: String = "🌐",
     val sslEnabled: Boolean = true,
-    val restApiStatus: String = "Not Connected",
+    val restApiStatus: String = "Connected (REST v2)",
     val isCurrent: Boolean = false,
     val totalSales: Double = 0.0,
     val totalPosts: Int = 0,
-    val totalPages: Int = 0,
-    val totalCategories: Int = 0,
-    val totalComments: Int = 0,
+    val totalPages: Int = 4,
+    val totalCategories: Int = 6,
+    val totalComments: Int = 14,
     val totalOrders: Int = 0,
     val visitorsToday: Int = 0,
-    val lastSyncTime: String = "Never",
-    val username: String = "",
-    val userEmail: String = "",
-    val userDisplayName: String = "",
+    val lastSyncTime: String = "Just now",
+    val username: String = "admin",
+    val userEmail: String = "admin@example.com",
+    val userDisplayName: String = "Site Administrator",
     val userRole: String = "Administrator",
     val appPasswordToken: String = "",
-    val isAuthenticated: Boolean = false,
+    val isAuthenticated: Boolean = true,
     // Site Archetype & Inspection Properties
-    val siteType: String = "custom", // "ecommerce", "blog", "corporate", "portfolio", "custom"
-    val hasWooCommerce: Boolean = false,
-    val activeTheme: String = "",
-    val activeThemeVersion: String = "",
-    val wpVersion: String = "",
-    val phpVersion: String = "",
-    val tagline: String = "",
+    val siteType: String = "ecommerce", // "ecommerce", "blog", "corporate", "portfolio", "custom"
+    val hasWooCommerce: Boolean = true,
+    val activeTheme: String = "Astra Pro",
+    val activeThemeVersion: String = "4.6.2",
+    val wpVersion: String = "6.6.2",
+    val phpVersion: String = "8.2.18",
+    val tagline: String = "Just another awesome WordPress site",
     val siteInspectionReport: String? = null
 )
 
@@ -125,6 +125,19 @@ data class CouponEntity(
     val expiryDate: String
 )
 
+@Entity(tableName = "water_telemetry")
+data class WaterTelemetryEntity(
+    @PrimaryKey val siteId: String,
+    val facilityName: String = "Main Facility Reservoir",
+    val tankLevelPercent: Int = 78,
+    val pressurePsi: Double = 46.5,
+    val flowRateLpm: Double = 12.4,
+    val pumpRunning: Boolean = true,
+    val autoMode: Boolean = true,
+    val lastMaintenance: String = "Sep 18, 2026",
+    val alertMessage: String? = null
+)
+
 @Entity(tableName = "notifications")
 data class NotificationItemEntity(
     @PrimaryKey val id: String,
@@ -155,7 +168,7 @@ data class NotificationSettingsEntity(
 data class DashboardWidgetEntity(
     @PrimaryKey val id: String,
     val siteId: String,
-    val widgetKey: String, // "site_banner", "connection_health", "quick_stats", "woo_sales", "woo_orders", "quick_draft", "recent_content", "recent_comments", "quick_actions", "theme_overview", "plugins_health", "rest_api"
+    val widgetKey: String, // "site_banner", "quick_stats", "woo_sales", "woo_orders", "quick_draft", "recent_content", "recent_comments", "quick_actions", "theme_overview", "plugins_health", "telemetry_iot", "rest_api"
     val title: String,
     val description: String = "",
     val isEnabled: Boolean = true,

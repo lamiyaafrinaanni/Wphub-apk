@@ -17,12 +17,6 @@ interface SiteDao {
     @Query("SELECT * FROM sites WHERE id = :siteId LIMIT 1")
     suspend fun getSiteById(siteId: String): SiteEntity?
 
-    @Query("SELECT * FROM sites")
-    suspend fun getAllSitesDirect(): List<SiteEntity>
-
-    @Query("SELECT * FROM sites WHERE url = :url OR url = :cleanUrl OR url = :urlWithSlash LIMIT 1")
-    suspend fun getSiteByUrl(url: String, cleanUrl: String, urlWithSlash: String): SiteEntity?
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSites(sites: List<SiteEntity>)
 
@@ -38,7 +32,7 @@ interface SiteDao {
     @Query("DELETE FROM sites WHERE id = :siteId")
     suspend fun deleteSite(siteId: String)
 
-    @Query("DELETE FROM sites WHERE id = 'site_demo_store_123' OR id = 'demo_site_seed'")
+    @Query("DELETE FROM sites WHERE id LIKE '%demo%' OR url LIKE '%.local%' OR name LIKE '%Demo%'")
     suspend fun deleteDemoSites()
 
     @Query("DELETE FROM sites")
@@ -68,9 +62,6 @@ interface PostDao {
     @Query("DELETE FROM posts WHERE id = :postId")
     suspend fun deletePost(postId: String)
 
-    @Query("DELETE FROM posts WHERE siteId = :siteId")
-    suspend fun deletePostsForSite(siteId: String)
-
     @Query("DELETE FROM posts")
     suspend fun clearAllPosts()
 }
@@ -92,9 +83,6 @@ interface ProductDao {
     @Query("DELETE FROM products WHERE id = :productId")
     suspend fun deleteProduct(productId: String)
 
-    @Query("DELETE FROM products WHERE siteId = :siteId")
-    suspend fun deleteProductsForSite(siteId: String)
-
     @Query("DELETE FROM products")
     suspend fun clearAllProducts()
 }
@@ -113,9 +101,6 @@ interface OrderDao {
     @Query("UPDATE orders SET status = :newStatus WHERE id = :orderId")
     suspend fun updateOrderStatus(orderId: String, newStatus: String)
 
-    @Query("DELETE FROM orders WHERE siteId = :siteId")
-    suspend fun deleteOrdersForSite(siteId: String)
-
     @Query("DELETE FROM orders")
     suspend fun clearAllOrders()
 }
@@ -130,9 +115,6 @@ interface CustomerDao {
 
     @Query("UPDATE customers SET role = :newRole WHERE id = :customerId")
     suspend fun updateCustomerRole(customerId: String, newRole: String)
-
-    @Query("DELETE FROM customers WHERE siteId = :siteId")
-    suspend fun deleteCustomersForSite(siteId: String)
 
     @Query("DELETE FROM customers")
     suspend fun clearAllCustomers()
@@ -152,9 +134,6 @@ interface PluginDao {
     @Query("UPDATE plugins SET version = :newVersion, updateAvailable = 0, newVersion = NULL WHERE id = :pluginId")
     suspend fun updatePluginVersion(pluginId: String, newVersion: String)
 
-    @Query("DELETE FROM plugins WHERE siteId = :siteId")
-    suspend fun deletePluginsForSite(siteId: String)
-
     @Query("DELETE FROM plugins")
     suspend fun clearAllPlugins()
 }
@@ -170,11 +149,23 @@ interface CouponDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCoupon(coupon: CouponEntity)
 
-    @Query("DELETE FROM coupons WHERE siteId = :siteId")
-    suspend fun deleteCouponsForSite(siteId: String)
-
     @Query("DELETE FROM coupons")
     suspend fun clearAllCoupons()
+}
+
+@Dao
+interface WaterTelemetryDao {
+    @Query("SELECT * FROM water_telemetry WHERE siteId = :siteId LIMIT 1")
+    fun getTelemetryForSite(siteId: String): Flow<WaterTelemetryEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTelemetry(telemetry: WaterTelemetryEntity)
+
+    @Update
+    suspend fun updateTelemetry(telemetry: WaterTelemetryEntity)
+
+    @Query("DELETE FROM water_telemetry")
+    suspend fun clearAllTelemetry()
 }
 
 @Dao
@@ -217,9 +208,6 @@ interface NotificationSettingsDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateSettings(settings: NotificationSettingsEntity)
-
-    @Query("DELETE FROM notification_settings WHERE siteId = :siteId")
-    suspend fun deleteSettingsForSite(siteId: String)
 
     @Query("DELETE FROM notification_settings")
     suspend fun clearAllSettings()

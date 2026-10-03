@@ -33,7 +33,6 @@ import com.example.data.remote.WordPressRestClient
 import com.example.ui.theme.*
 import com.example.util.WebViewCrashLogger
 import java.net.URLEncoder
-import java.util.Locale
 
 /**
  * Official WordPress Application Passwords Web Authorization & Request Flow.
@@ -372,29 +371,25 @@ fun WordPressWebAuthorizationDialog(
                                             checkUrlForAuthorizedCredentials(url)
                                         }
 
-                                        // Only evaluate JS on the verified target WordPress domain to prevent cross-origin script execution
-                                        val currentHost = url?.let { Uri.parse(it).host?.lowercase(Locale.ROOT) }
-                                        val expectedHost = Uri.parse(cleanBaseUrl).host?.lowercase(Locale.ROOT)
-                                        if (currentHost != null && expectedHost != null && currentHost == expectedHost) {
-                                            view?.evaluateJavascript(
-                                                """
-                                                (function() {
-                                                    try {
-                                                        var codeEl = document.querySelector('.application-password-display, #application-passwords-user-api, .notice-success code, input#new_application_password');
-                                                        if (codeEl) {
-                                                            var val = codeEl.value || codeEl.innerText || codeEl.textContent || '';
-                                                            return val.trim();
-                                                        }
-                                                    } catch(e) {}
-                                                    return '';
-                                                })();
-                                                """.trimIndent()
-                                            ) { jsResult ->
-                                                val cleanResult = jsResult?.trim('"')?.trim()
-                                                if (!cleanResult.isNullOrBlank() && cleanResult != "null" && cleanResult.length >= 16) {
-                                                    detectedPassword = cleanResult
-                                                    onShowMessage("Application Password captured from WordPress!")
-                                                }
+                                        // Evaluate JS to detect if password is displayed on screen
+                                        view?.evaluateJavascript(
+                                            """
+                                            (function() {
+                                                try {
+                                                    var codeEl = document.querySelector('.application-password-display, #application-passwords-user-api, .notice-success code, input#new_application_password');
+                                                    if (codeEl) {
+                                                        var val = codeEl.value || codeEl.innerText || codeEl.textContent || '';
+                                                        return val.trim();
+                                                    }
+                                                } catch(e) {}
+                                                return '';
+                                            })();
+                                            """.trimIndent()
+                                        ) { jsResult ->
+                                            val cleanResult = jsResult?.trim('"')?.trim()
+                                            if (!cleanResult.isNullOrBlank() && cleanResult != "null" && cleanResult.length >= 16) {
+                                                detectedPassword = cleanResult
+                                                onShowMessage("Application Password captured from WordPress!")
                                             }
                                         }
                                     }
@@ -402,21 +397,13 @@ fun WordPressWebAuthorizationDialog(
                                     private fun checkUrlForAuthorizedCredentials(url: String): Boolean {
                                         try {
                                             val uri = Uri.parse(url)
-                                            val expectedHost = Uri.parse(cleanBaseUrl).host?.lowercase(Locale.ROOT)
-                                            val requestHost = uri.host?.lowercase(Locale.ROOT)
-
-                                            // STRICT SECURITY CHECK: Ensure URL belongs to the targeted WordPress host
-                                            if (requestHost == null || expectedHost == null || requestHost != expectedHost) {
-                                                return false
-                                            }
-
                                             val passwordParam = uri.getQueryParameter("password")
                                             val userParam = uri.getQueryParameter("user_login") ?: initialUsername
                                             val siteParam = uri.getQueryParameter("site_url") ?: cleanBaseUrl
 
                                             if (!passwordParam.isNullOrBlank()) {
                                                 onShowMessage("Permission Approved! Connecting...")
-                                                onAuthorized(cleanBaseUrl, userParam.ifBlank { "admin" }, passwordParam)
+                                                onAuthorized(siteParam, userParam.ifBlank { "admin" }, passwordParam)
                                                 return true
                                             }
 
@@ -429,7 +416,7 @@ fun WordPressWebAuthorizationDialog(
                                             // ignore parse exceptions
                                         }
                                         return false
-                                    }
+                                     }
                                  }
 
                                 loadUrl(initialAuthUrl)

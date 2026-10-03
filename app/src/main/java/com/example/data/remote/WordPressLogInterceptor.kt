@@ -174,15 +174,16 @@ class WordPressLogInterceptor(
                 val parts = decoded.split(":", limit = 2)
                 if (parts.size == 2) {
                     val user = parts[0]
-                    "Basic [PROTECTED_USER: $user, PASSWORD: ••••••••]"
+                    val passMasked = "•".repeat(parts[1].length.coerceAtMost(8))
+                    "Basic $rawBase64 [Decoded: $user:$passMasked]"
                 } else {
-                    "Basic [PROTECTED_CREDENTIALS]"
+                    "Basic $rawBase64 [Decoded: $decoded]"
                 }
             } catch (e: Exception) {
-                "Basic [PROTECTED_CREDENTIALS]"
+                "Basic ${rawBase64.take(10)}..."
             }
         } else {
-            "Bearer [PROTECTED_TOKEN]"
+            authHeader.take(15) + "..."
         }
     }
 
@@ -241,40 +242,23 @@ class WordPressLogInterceptor(
     ) {
         val sb = StringBuilder()
         val isError = statusCode !in 200..299
-        val prefix = if (statusCode == 401) {
-            "🚨 [WP REST API 401 UNAUTHORIZED AUTH FAILURE]"
-        } else if (isError) {
-            "⚠️ [WP REST API ERROR $statusCode]"
-        } else {
-            "✅ [WP REST API RESPONSE $statusCode]"
-        }
+        val prefix = if (isError) "⚠️ [WP REST API ERROR $statusCode]" else "✅ [WP REST API RESPONSE $statusCode]"
 
         sb.appendLine("┌─── $prefix ─────────────────────────────────────────────")
         sb.appendLine("│ Request : $method $url")
         sb.appendLine("│ Status  : $statusCode $statusMessage (took ${elapsedMs}ms)")
-        
-        if (statusCode == 401) {
-            sb.appendLine("│ 🚨 [EXACT 401 AUTHENTICATION RESPONSE HEADERS] 🚨")
-        } else {
-            sb.appendLine("│ Response Headers (${responseHeaders.size}):")
-        }
+        sb.appendLine("│ Response Headers (${responseHeaders.size}):")
         responseHeaders.forEach { (name, value) ->
             sb.appendLine("│   $name: $value")
         }
 
         if (!responseBodyPreview.isNullOrBlank()) {
-            val truncated = if (statusCode == 401) {
-                responseBodyPreview // Do not truncate 401 auth failures!
-            } else if (responseBodyPreview.length > 500) {
+            val truncated = if (responseBodyPreview.length > 500) {
                 responseBodyPreview.take(500) + "... [truncated, total ${responseBodyPreview.length} chars]"
             } else {
                 responseBodyPreview
             }
-            if (statusCode == 401) {
-                sb.appendLine("│ 🚨 [EXACT 401 AUTHENTICATION FAILURE BODY] 🚨")
-            } else {
-                sb.appendLine("│ Body Preview:")
-            }
+            sb.appendLine("│ Body Preview:")
             sb.appendLine("│   $truncated")
         }
 

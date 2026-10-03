@@ -1,80 +1,69 @@
-# Implementation Plan - WordPress Connection & Sync Diagnostics Fix
+# GutenbergEditor Hybrid WebView Component
 
-This plan fixes the critical `401 Unauthorized` connection issue and empty dashboard bug that occurs immediately after completing Step 3 (Web Portal approval) on certain WordPress environments.
-
-## User Review & Critical Decisions
-
-> [!IMPORTANT]
-> The primary bug is a discrepancy between the username generated during the WordPress Web Portal session (e.g. `mariyaceotb`) and the fallback saved site credentials, which were hardcoded to `admin`. This caused subsequent REST API calls to fail with 401 Unauthorized, leaving the dashboard empty.
-
-* **Confirmed Decision 1:** Pass the actual `user_login` returned by the WordPress Web Portal instead of hardcoding `admin` in the offline/fallback site creation flow (`addNewSite`).
-* **Confirmed Decision 2:** Ensure protocol discovery automatically adapts to `http` or `https` based on host reachability to prevent SSL Handshake failures from falsely triggering verification errors.
+Create a mobile-optimized `GutenbergEditor` Jetpack Compose component that wraps an Android `WebView`, injecting custom JavaScript and CSS or loading the authentic WordPress Gutenberg editor (`wp-admin/post-new.php` / `post.php`) with a dual-mode fallback to an embedded local HTML Gutenberg block engine with bidirectional JS-to-Kotlin `JavascriptInterface` communication.
 
 ---
 
-## 1. Overview & Core Concept
+### User Review & Critical Decisions
 
-When a user approves access in the Web Portal, WordPress generates a secure 16-character Application Password and redirects to the app callback. If the app's automated connection check fails (due to strict local server policies, SSL/HTTPS handshake issues on non-SSL test hosts, or query parameter parsing nuances), the app falls back to saving the site offline using `addNewSite`. 
-
-However, `addNewSite` was hardcoded to user `"admin"`. This plan corrects the parameters so the actual authenticated username is preserved across all sync layers.
+- **Hybrid Strategy**:
+  - **Primary Engine**: Loads the remote WordPress site's authentic Gutenberg block editor (`/wp-admin/post-new.php?post_type=post`) inside an authenticated Android `WebView` using stored session cookies/Application Credentials, hiding WP admin chrome (`#adminmenumain`, `#wpadminbar`) via CSS injection for a distraction-free mobile screen.
+  - **Offline/Standalone Local Engine**: Provides an embedded HTML5 Gutenberg JS Block Engine (`/assets/gutenberg_editor.html`) powered by `@wordpress/blocks` & `@wordpress/block-editor` bundles for offline drafting, syncing directly with Room local database entities.
+- **JavascriptInterface Bridge**:
+  - Exposes `@JavascriptInterface` (`GutenbergNativeBridge`) to capture `getBlocks()`, `savePost()`, and `onContentChange()` events from the WebView back to Kotlin state (`ViewModel`).
 
 ---
 
-## 2. Technical Architecture & Data Strategy
+### 1. Overview & Core Concept
+
+- **What It Does**: Renders a rich mobile Gutenberg post editor inside a Jetpack Compose `AndroidView(factory = { WebView(it) })`. Supports block insertion, live preview, publish settings, and full mobile toolbar integration.
+- **Key Value**: Delivers the exact WordPress block editor experience natively inside the Android mobile app with instant bidirectional synchronization.
+
+---
+
+### 2. User Experience & Visual Design
+
+- **Top Bar Controls**: Compact mobile top bar with Back, Undo/Redo, Block Inserter (`+`), Visual/Code mode switch, and Publish/Update button.
+- **Mobile Floating Block Inserter**: Quick-add chips for Paragraph, Heading, Image, Quote, Code, and Custom HTML at the bottom of the canvas.
+- **WebView Styling**: CSS overrides to remove WP admin sidebar, header, and footer, leaving a full-width mobile Gutenberg canvas.
+
+---
+
+### 3. Technical Architecture & Data Strategy
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                  WordPress Web Portal Login                  │
-│  User authenticates -> Clicks "Approve"                     │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ Redirect callback
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│             WordPressAuthWebViewDialog Interceptor            │
-│  Extracts: siteurl, user_login, password                      │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ Trigger Connection Check
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│             verifyAndConnectWordPressSite (ViewModel)        │
-│  Tries live API test with extracted userLogin and password    │
-└──────────────┬───────────────────────────────┬───────────────┘
-               │                               │
-               │ (If Succeeded)                │ (If Failed / SSL Handshake Error)
-               ▼                               ▼
-┌──────────────────────────────┐┌──────────────────────────────┐
-│     loginToWordPressSite     ││     addNewSite (Fallback)    │
-│  Saves with real userLogin   ││  OLD: Hardcoded "admin" ❌  │
-│  and begins live sync        ││  NEW: Real userLogin ✅     │
-└──────────────┬───────────────┘└──────────────┬───────────────┘
-               │                               │
-               └───────────────┬───────────────┘
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│                 Secure Local Room DB Storage                 │
-│  Saves SiteEntity: username = userLogin, appPasswordToken    │
-└──────────────────────────────┬───────────────────────────────┘
-                               │ Load Dashboard
-                               ▼
-┌──────────────────────────────────────────────────────────────┐
-│                     WordPress REST Sync                      │
-│  Queries endpoints using correctly paired username & password │
-│  Bypasses 401 Unauthorized errors and populates dashboard    │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   GutenbergEditor Composable                 │
+│ ┌───────────────────────┐   ┌─────────────────────────────┐ │
+│ │ Top Bar & Block Chips │   │ WebView (AndroidView)       │ │
+│ └───────────┬───────────┘   └──────────────┬──────────────┘ │
+└─────────────┼──────────────────────────────┼────────────────┘
+              │                              │
+              ▼                              ▼
+    ┌──────────────────┐          ┌───────────────────────┐
+    │  GutenbergState  │◄─────────┤ GutenbergNativeBridge │
+    └─────────┬────────┘          └───────────────────────┘
+              │                              ▲
+              │                              │
+              ▼                              │
+    ┌──────────────────┐          ┌───────────────────────┐
+    │ WPHubViewModel   │─────────►│ evaluateJavascript()  │
+    └──────────────────┘          └───────────────────────┘
 ```
+
+#### Key Components:
+1. `GutenbergEditor.kt`: Compose wrapper containing `AndroidView` for `WebView`, top toolbar, floating block toolbar, and publishing modal.
+2. `GutenbergNativeBridge.kt`: `@JavascriptInterface` bridging JS `window.AndroidGutenberg.onPostContentChanged(json)` to Kotlin Flow/State.
+3. `GutenbergJsInjector.kt`: Injects mobile responsive CSS (`#wpbody-content { padding: 0 }`, `.edit-post-header { top: 0 }`) and custom JS bridge scripts into the WebView upon `onPageFinished`.
 
 ---
 
-## 3. Implementation Steps
+### 4. Step-by-Step Implementation Steps
 
-1. **Update Repository Access (`WPHubRepository.kt`):**
-   - Modify `addNewSite` signature to accept `username: String`.
-   - Pass `usernameOrEmail = username` to `loginToWordPressSite` instead of `"admin"`.
-
-2. **Update ViewModel Protocol (`WPHubViewModel.kt`):**
-   - Modify `addNewSite` signature to accept `username: String`.
-   - Pass the `username` to the modified repository method.
-
-3. **Update Connection Flow Logic (`WordPressConnectionScreen.kt`):**
-   - In the `onError` lambda of `verifyAndConnectWordPressSite`, invoke `viewModel.addNewSite` with the extracted `userLogin` instead of just name, url, and password.
-   - Improve URL cleaning to preserve `http://` or `https://` based on what the user originally entered instead of forcefully prepending `https://` if it already has a protocol.
+1. **Create `GutenbergNativeBridge`**:
+   - Define interface methods: `onPostUpdated(title, content, jsonBlocks)`, `onEditorReady()`, `onBlockSelected(blockName)`.
+2. **Create `GutenbergEditor.kt` Composable**:
+   - Configure `WebView` settings: `javaScriptEnabled = true`, `domStorageEnabled = true`, `databaseEnabled = true`.
+   - Setup `WebViewClient` to handle cookies and inject custom CSS for hiding WP Admin chrome.
+3. **Integrate into Content & Edit Flows**:
+   - Add `GutenbergEditor` tab or full-screen dialog in `ContentScreen` and `WPHubApp`.

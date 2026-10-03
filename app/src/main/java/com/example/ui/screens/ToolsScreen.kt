@@ -29,10 +29,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.NotificationSettingsEntity
 import com.example.data.local.PluginEntity
 import com.example.data.local.SiteEntity
+import com.example.data.local.WaterTelemetryEntity
 import com.example.data.remote.WordPressApiLogEntry
 import com.example.data.remote.WordPressLogStore
-import com.example.data.remote.RestTestResult
-import kotlinx.coroutines.launch
 import com.example.ui.components.BiometricCredentialsVaultCard
 import com.example.ui.components.NotificationSettingsTab
 import com.example.ui.components.SiteSelector
@@ -42,6 +41,7 @@ import com.example.ui.theme.*
 @Composable
 fun ToolsScreen(
     plugins: List<PluginEntity>,
+    waterTelemetry: WaterTelemetryEntity?,
     notificationSettings: NotificationSettingsEntity? = null,
     currentSite: SiteEntity? = null,
     allSites: List<SiteEntity> = emptyList(),
@@ -59,6 +59,8 @@ fun ToolsScreen(
     onTriggerTestInquiryAlert: () -> Unit = {},
     onTogglePlugin: (String, Boolean) -> Unit,
     onUpdatePlugin: (String, String) -> Unit,
+    onToggleWaterPump: () -> Unit,
+    onToggleWaterAutoMode: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
     var selectedToolsSubTab by remember { mutableIntStateOf(0) }
@@ -148,9 +150,9 @@ fun ToolsScreen(
             Tab(
                 selected = selectedToolsSubTab == 4,
                 onClick = { selectedToolsSubTab = 4 },
-                text = { Text("OAuth Handshake", fontWeight = FontWeight.Bold) },
-                icon = { Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                modifier = Modifier.testTag("tab_oauth_handshake")
+                text = { Text("Water & Utility", fontWeight = FontWeight.Bold) },
+                icon = { Icon(Icons.Default.WaterDrop, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                modifier = Modifier.testTag("tab_water_utility")
             )
             Tab(
                 selected = selectedToolsSubTab == 5,
@@ -158,13 +160,6 @@ fun ToolsScreen(
                 text = { Text("REST Endpoints", fontWeight = FontWeight.Bold) },
                 icon = { Icon(Icons.Default.Api, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 modifier = Modifier.testTag("tab_rest_api")
-            )
-            Tab(
-                selected = selectedToolsSubTab == 6,
-                onClick = { selectedToolsSubTab = 6 },
-                text = { Text("401 Raw Auth Logs", fontWeight = FontWeight.Bold) },
-                icon = { Icon(Icons.Default.VpnKeyOff, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                modifier = Modifier.testTag("tab_401_raw_logs")
             )
         }
 
@@ -458,11 +453,206 @@ fun ToolsScreen(
                 }
             }
             4 -> {
-                // OAuth Application Password Handshake Trace Inspector
-                OAuthHandshakeDiagnosticsScreen(
-                    currentSite = currentSite,
-                    onReconnectClick = onOpenLoginDialog
-                )
+                // Water & Utility Telemetry
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = waterTelemetry?.facilityName ?: "Main Facility Reservoir",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "IoT Telemetry Station #04",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (waterTelemetry?.pumpRunning == true) EmeraldSuccessBg else AmberWarningBg
+                                    ) {
+                                        Text(
+                                            text = if (waterTelemetry?.pumpRunning == true) "PUMP ACTIVE" else "PUMP IDLE",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (waterTelemetry?.pumpRunning == true) EmeraldSuccess else AmberWarning,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                // Tank Level Progress
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Reservoir Tank Level",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "${waterTelemetry?.tankLevelPercent ?: 78}%",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryIndigo
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                LinearProgressIndicator(
+                                    progress = { (waterTelemetry?.tankLevelPercent ?: 78) / 100f },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(10.dp)
+                                        .clip(CircleShape),
+                                    color = PrimaryIndigo,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    MetricSmallCard(
+                                        title = "Water Pressure",
+                                        value = "${waterTelemetry?.pressurePsi ?: 46.5} PSI",
+                                        subtitle = "Optimal Range (40-55)",
+                                        isPositive = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    MetricSmallCard(
+                                        title = "Live Flow Rate",
+                                        value = "${waterTelemetry?.flowRateLpm ?: 12.4} LPM",
+                                        subtitle = "Steady Circulation",
+                                        isPositive = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Interactive Controls Card
+                    item {
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(18.dp)) {
+                                Text(
+                                    text = "Telemetric Controls & Overrides",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Main Induction Pump",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = "Control facility intake valve and motor",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = waterTelemetry?.pumpRunning == true,
+                                        onCheckedChange = { onToggleWaterPump() },
+                                        modifier = Modifier.testTag("switch_water_pump")
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "IoT Autonomous Mode",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = "Auto-regulates pressure and refills threshold",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = waterTelemetry?.autoMode == true,
+                                        onCheckedChange = { onToggleWaterAutoMode() },
+                                        modifier = Modifier.testTag("switch_water_auto_mode")
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    FilledTonalButton(
+                                        onClick = { onShowMessage("Triggered automated reservoir backwash cycle") },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Flush Lines")
+                                    }
+                                    Button(
+                                        onClick = { onShowMessage("Telemetry report exported to PDF") },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Telemetry Log")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+                }
             }
             5 -> {
                 // REST API Endpoints & Live Log Inspector
@@ -478,11 +668,6 @@ fun ToolsScreen(
                         else -> apiLogs
                     }
                 }
-
-                val coroutineScope = rememberCoroutineScope()
-                val restClient = remember { com.example.data.remote.WordPressRestClient() }
-                var isTestingConnection by remember { mutableStateOf(false) }
-                var restTestResult by remember { mutableStateOf<com.example.data.remote.RestTestResult?>(null) }
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -531,137 +716,6 @@ fun ToolsScreen(
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
                                     Text("Diagnose", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                }
-                            }
-                        }
-                    }
-
-                    // Live API Structure Test Tool
-                    item {
-                        Card(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, BorderSlate200),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.NetworkCheck,
-                                            contentDescription = null,
-                                            tint = PrimaryIndigo,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Text(
-                                            text = "REST API Structure Test",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-
-                                    Button(
-                                        onClick = {
-                                            val url = currentSite?.url
-                                            if (url != null) {
-                                                isTestingConnection = true
-                                                restTestResult = null
-                                                coroutineScope.launch {
-                                                    restTestResult = restClient.runSimpleRestConnectionTest(url)
-                                                    isTestingConnection = false
-                                                }
-                                            } else {
-                                                onShowMessage("No active WordPress site connected to test.")
-                                            }
-                                        },
-                                        enabled = !isTestingConnection && currentSite != null,
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryIndigo),
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                                    ) {
-                                        if (isTestingConnection) {
-                                            CircularProgressIndicator(
-                                                color = Color.White,
-                                                strokeWidth = 2.dp,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Testing...", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        } else {
-                                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Run Test", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "Performs a direct unauthenticated GET /wp-json/ query to verify if the server returns a valid WordPress API schema (namespaces & routes) before attempting WooCommerce sync.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                val result = restTestResult
-                                if (result != null) {
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    when (result) {
-                                        is com.example.data.remote.RestTestResult.Success -> {
-                                            Surface(
-                                                color = EmeraldSuccessBg,
-                                                shape = RoundedCornerShape(10.dp),
-                                                border = androidx.compose.foundation.BorderStroke(1.dp, EmeraldSuccess.copy(alpha = 0.4f)),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Column(modifier = Modifier.padding(12.dp)) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldSuccess, modifier = Modifier.size(16.dp))
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Text("Test Passed (Schema Validated)", fontWeight = FontWeight.Bold, color = Color(0xFF065F46), fontSize = 13.sp)
-                                                    }
-                                                    Spacer(modifier = Modifier.height(6.dp))
-                                                    Text(
-                                                        text = "• Site Name: ${result.siteName}\n" +
-                                                               "• Namespaces: ${result.namespacesCount} registered endpoints\n" +
-                                                               "• Routes: ${result.routesCount} available resources\n\n" +
-                                                               "The REST API is responsive and structure conforms to the WordPress core API specification.",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = Color(0xFF065F46),
-                                                        fontSize = 11.sp
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        is com.example.data.remote.RestTestResult.Error -> {
-                                            Surface(
-                                                color = RoseErrorBg,
-                                                shape = RoundedCornerShape(10.dp),
-                                                border = androidx.compose.foundation.BorderStroke(1.dp, RoseError.copy(alpha = 0.4f)),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Column(modifier = Modifier.padding(12.dp)) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Icon(Icons.Default.Error, contentDescription = null, tint = RoseError, modifier = Modifier.size(16.dp))
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Text("Test Failed (Schema Invalid)", fontWeight = FontWeight.Bold, color = Color(0xFF991B1B), fontSize = 13.sp)
-                                                    }
-                                                    Spacer(modifier = Modifier.height(4.dp))
-                                                    Text(
-                                                        text = result.message,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = Color(0xFF991B1B),
-                                                        fontSize = 11.sp
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -849,12 +903,6 @@ fun ToolsScreen(
                         Spacer(modifier = Modifier.height(24.dp))
                     }
                 }
-            }
-            6 -> {
-                AuthDiagnosticsScreen(
-                    currentSite = currentSite,
-                    onReconnectClick = onOpenLoginDialog
-                )
             }
         }
     }

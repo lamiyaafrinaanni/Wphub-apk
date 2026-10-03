@@ -25,7 +25,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AddSiteDialog(
     onDismiss: () -> Unit,
-    onConnectSite: (name: String, url: String, username: String, appPassword: String) -> Unit,
+    onConnectSite: (name: String, url: String, appPassword: String) -> Unit,
     onLoginWithCredentials: ((name: String, url: String, usernameOrEmail: String, password: String) -> Unit)? = null
 ) {
     var siteName by remember { mutableStateOf("") }
@@ -341,7 +341,6 @@ fun AddSiteDialog(
                                     onConnectSite(
                                         siteName.ifBlank { "WordPress Site" },
                                         sanitizedUrl,
-                                        usernameOrEmail.trim().ifBlank { "admin" },
                                         cleanedAppPass
                                     )
                                 }

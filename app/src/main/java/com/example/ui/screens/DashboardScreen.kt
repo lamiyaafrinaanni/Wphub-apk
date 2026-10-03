@@ -33,8 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.*
 import com.example.ui.HubTab
-import com.example.ui.components.ConnectionHealthCard
-import com.example.ui.components.WooCommerceRechartsSalesCard
 import com.example.ui.theme.*
 import java.text.NumberFormat
 import java.util.*
@@ -47,6 +45,7 @@ fun DashboardScreen(
     posts: List<PostEntity> = emptyList(),
     plugins: List<PluginEntity> = emptyList(),
     customers: List<CustomerEntity> = emptyList(),
+    waterTelemetry: WaterTelemetryEntity? = null,
     dashboardWidgets: List<DashboardWidgetEntity> = emptyList(),
     notifications: List<NotificationItemEntity> = emptyList(),
     isRefreshing: Boolean = false,
@@ -59,10 +58,7 @@ fun DashboardScreen(
     onQuickSaveDraft: (title: String, content: String) -> Unit = { _, _ -> },
     onOrderStatusChange: (String, String) -> Unit,
     onSyncClick: () -> Unit,
-    onConnectSiteClick: () -> Unit = {},
-    onReconnectSite: (() -> Unit)? = null,
-    onOpenAuthDiagnostics: (() -> Unit)? = null,
-    onSimulateOrder: (() -> Unit)? = null
+    onConnectSiteClick: () -> Unit = {}
 ) {
     val currencyFormat = remember { NumberFormat.getCurrencyInstance(Locale.US) }
     val totalRevenue = remember(orders) { orders.filter { it.status == "completed" }.sumOf { it.totalAmount } }
@@ -114,70 +110,13 @@ fun DashboardScreen(
                     onOpenTroubleshooter = { onNavigateTab(HubTab.TOOLS) }
                 )
             }
-        } else {
-            if (currentSite.isAuthenticated == false || currentSite.restApiStatus.contains("401")) {
-                item {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = com.example.ui.theme.RoseErrorBg),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.RoseError.copy(alpha = 0.4f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onReconnectSite?.invoke() }
-                            .testTag("banner_401_reconnect")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.VpnKeyOff,
-                                contentDescription = null,
-                                tint = com.example.ui.theme.RoseError,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "HTTP 401: Credentials Rejected",
-                                    fontWeight = FontWeight.Bold,
-                                    color = com.example.ui.theme.RoseError,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Application password or token failed for ${currentSite.name}. Tap to reconnect.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = com.example.ui.theme.RoseError.copy(alpha = 0.85f),
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Button(
-                                onClick = { onReconnectSite?.invoke() },
-                                colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.RoseError),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Reconnect", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (activeWidgets.isEmpty()) {
+        } else if (activeWidgets.isEmpty()) {
             // Default fallback if widgets not yet loaded
             item {
                 SiteBannerWidget(
                     currentSite = currentSite,
                     onCustomizeClick = onOpenDashboardCustomizer,
                     onSyncClick = onSyncClick
-                )
-            }
-            item {
-                ConnectionHealthCard(
-                    currentSite = currentSite,
-                    onReconnectSite = onReconnectSite,
-                    onViewRestLogs = { onOpenAuthDiagnostics?.invoke() ?: onNavigateTab(HubTab.TOOLS) }
                 )
             }
             item {
@@ -191,16 +130,6 @@ fun DashboardScreen(
                     currencyFormat = currencyFormat
                 )
             }
-            item {
-                WooCommerceRechartsSalesCard(
-                    currentSite = currentSite,
-                    orders = orders,
-                    totalRevenue = totalRevenue,
-                    currencyFormat = currencyFormat,
-                    onViewStore = { onNavigateTab(HubTab.STORE) },
-                    onSimulateOrder = onSimulateOrder
-                )
-            }
         } else {
             activeWidgets.forEach { widget ->
                 when (widget.widgetKey) {
@@ -209,13 +138,6 @@ fun DashboardScreen(
                             currentSite = currentSite,
                             onCustomizeClick = onOpenDashboardCustomizer,
                             onSyncClick = onSyncClick
-                        )
-                    }
-                    "connection_health" -> item(key = widget.id) {
-                        ConnectionHealthCard(
-                            currentSite = currentSite,
-                            onReconnectSite = onReconnectSite,
-                            onViewRestLogs = { onOpenAuthDiagnostics?.invoke() ?: onNavigateTab(HubTab.TOOLS) }
                         )
                     }
                     "quick_stats" -> item(key = widget.id) {
@@ -238,14 +160,12 @@ fun DashboardScreen(
                             onOpenCustomizer = onOpenDashboardCustomizer
                         )
                     }
-                    "woo_sales" -> item(key = widget.id) {
-                        WooCommerceRechartsSalesCard(
-                            currentSite = currentSite,
+                    "woo_sales" -> if (hasWoo) item(key = widget.id) {
+                        WooSalesWidget(
                             orders = orders,
                             totalRevenue = totalRevenue,
                             currencyFormat = currencyFormat,
-                            onViewStore = { onNavigateTab(HubTab.STORE) },
-                            onSimulateOrder = onSimulateOrder
+                            onViewStore = { onNavigateTab(HubTab.STORE) }
                         )
                     }
                     "woo_orders" -> if (hasWoo) item(key = widget.id) {
@@ -300,24 +220,18 @@ fun DashboardScreen(
                             onOpenCrm = { onNavigateTab(HubTab.CRM) }
                         )
                     }
+                    "telemetry_iot" -> item(key = widget.id) {
+                        TelemetryWidget(
+                            telemetry = waterTelemetry,
+                            onOpenTools = { onNavigateTab(HubTab.TOOLS) }
+                        )
+                    }
                     "rest_api" -> item(key = widget.id) {
                         RestApiDiagnosticWidget(
                             currentSite = currentSite,
                             onSyncClick = onSyncClick
                         )
                     }
-                }
-            }
-            if (activeWidgets.isNotEmpty() && activeWidgets.none { it.widgetKey == "woo_sales" }) {
-                item(key = "fallback_woo_sales_recharts") {
-                    WooCommerceRechartsSalesCard(
-                        currentSite = currentSite,
-                        orders = orders,
-                        totalRevenue = totalRevenue,
-                        currencyFormat = currencyFormat,
-                        onViewStore = { onNavigateTab(HubTab.STORE) },
-                        onSimulateOrder = onSimulateOrder
-                    )
                 }
             }
         }
@@ -374,7 +288,6 @@ fun DashboardScreen(
         item {
             Spacer(modifier = Modifier.height(24.dp))
         }
-    }
     }
 }
 }
@@ -870,13 +783,61 @@ private fun WooSalesWidget(
     currencyFormat: NumberFormat,
     onViewStore: () -> Unit
 ) {
-    WooCommerceRechartsSalesCard(
-        currentSite = null,
-        orders = orders,
-        totalRevenue = totalRevenue,
-        currencyFormat = currencyFormat,
-        onViewStore = onViewStore
-    )
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSlate200),
+        modifier = Modifier.fillMaxWidth().testTag("widget_woo_sales")
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.TrendingUp, contentDescription = null, tint = WooPurple, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "WooCommerce Revenue Velocity",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark
+                    )
+                }
+                TextButton(
+                    onClick = onViewStore,
+                    contentPadding = PaddingValues(horizontal = 6.dp)
+                ) {
+                    Text("Store Hub →", color = WooPurple, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Sparkline Bar Visualization
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .background(BadgeBackground, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val heights = listOf(0.4f, 0.65f, 0.5f, 0.85f, 0.6f, 0.95f, 0.75f)
+                heights.forEachIndexed { i, factor ->
+                    Box(
+                        modifier = Modifier
+                            .width(28.dp)
+                            .fillMaxHeight(factor)
+                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                            .background(if (i == heights.size - 2) PrimaryIndigo else BadgeAccentTint.copy(alpha = 0.6f))
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1298,6 +1259,48 @@ private fun CrmInquiriesWidget(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TelemetryWidget(
+    telemetry: WaterTelemetryEntity?,
+    onOpenTools: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSlate200),
+        modifier = Modifier.fillMaxWidth().testTag("widget_telemetry")
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.WaterDrop, contentDescription = null, tint = PrimaryIndigo, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Operations & IoT Telemetry",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TextDark
+                    )
+                }
+                TextButton(onClick = onOpenTools, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                    Text("Controls →", color = PrimaryIndigo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "${telemetry?.facilityName ?: "Facility Hub"} • Level: ${telemetry?.tankLevelPercent ?: 78}% • Pressure: ${telemetry?.pressurePsi ?: 46.5} PSI",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextBodyMuted,
+                fontSize = 12.sp
+            )
         }
     }
 }
