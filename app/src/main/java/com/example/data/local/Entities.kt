@@ -34,7 +34,8 @@ data class SiteEntity(
     val wpVersion: String = "6.6.2",
     val phpVersion: String = "8.2.18",
     val tagline: String = "Just another awesome WordPress site",
-    val siteInspectionReport: String? = null
+    val siteInspectionReport: String? = null,
+    val isDemo: Boolean = false
 )
 
 @Entity(tableName = "posts")
@@ -125,18 +126,6 @@ data class CouponEntity(
     val expiryDate: String
 )
 
-@Entity(tableName = "water_telemetry")
-data class WaterTelemetryEntity(
-    @PrimaryKey val siteId: String,
-    val facilityName: String = "Main Facility Reservoir",
-    val tankLevelPercent: Int = 78,
-    val pressurePsi: Double = 46.5,
-    val flowRateLpm: Double = 12.4,
-    val pumpRunning: Boolean = true,
-    val autoMode: Boolean = true,
-    val lastMaintenance: String = "Sep 18, 2026",
-    val alertMessage: String? = null
-)
 
 @Entity(tableName = "notifications")
 data class NotificationItemEntity(

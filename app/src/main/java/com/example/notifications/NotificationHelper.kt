@@ -14,6 +14,8 @@ import com.example.R
 
 object NotificationHelper {
 
+    val sessionToken = java.util.UUID.randomUUID().toString()
+
     const val CHANNEL_ID_ORDERS = "wp_channel_orders"
     const val CHANNEL_ID_COMMENTS = "wp_channel_comments"
     const val CHANNEL_ID_STOCK = "wp_channel_stock"
@@ -116,6 +118,7 @@ object NotificationHelper {
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("session_token", sessionToken)
             putExtra(EXTRA_DESTINATION_TAB, "store")
             putExtra(EXTRA_TARGET_TYPE, "order")
             putExtra(EXTRA_TARGET_ID, orderId)
@@ -181,6 +184,7 @@ object NotificationHelper {
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("session_token", sessionToken)
             putExtra(EXTRA_DESTINATION_TAB, "content")
             putExtra(EXTRA_TARGET_TYPE, "comment")
             putExtra(EXTRA_TARGET_ID, postId)
@@ -245,6 +249,7 @@ object NotificationHelper {
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("session_token", sessionToken)
             putExtra(EXTRA_DESTINATION_TAB, "store")
             putExtra(EXTRA_TARGET_TYPE, "product")
             putExtra(EXTRA_TARGET_ID, productId)
@@ -310,6 +315,7 @@ object NotificationHelper {
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("session_token", sessionToken)
             putExtra(EXTRA_DESTINATION_TAB, "crm")
             putExtra(EXTRA_TARGET_TYPE, "customer")
             putExtra(EXTRA_TARGET_ID, customerId)

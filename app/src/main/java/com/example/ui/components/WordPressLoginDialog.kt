@@ -56,6 +56,8 @@ fun WordPressLoginDialog(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var showTroubleshooter by remember { mutableStateOf(false) }
+    var showHttpWarningDialog by remember { mutableStateOf(false) }
+    var showWebAuthDialog by remember { mutableStateOf(false) }
 
     fun cleanUrl(raw: String): String {
         var url = raw.trim()
@@ -72,6 +74,44 @@ fun WordPressLoginDialog(
         return url
     }
 
+    val onConfirmSubmission = {
+        val sanitizedUrl = cleanUrl(siteUrl)
+        isSubmitting = true
+        val cleanedPass = if (authMode == "app_password") password.replace(" ", "").trim() else password.trim()
+        onLogin(
+            selectedSiteId,
+            sanitizedUrl,
+            siteName,
+            usernameOrEmail.trim(),
+            cleanedPass,
+            selectedRole,
+            rememberMe
+        )
+    }
+
+    if (showHttpWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showHttpWarningDialog = false },
+            title = { Text("Unsecured Connection Warning") },
+            text = { Text("You are connecting to an unencrypted HTTP site. Your login credentials and all site data will be transmitted in plain text across the network. Are you sure you want to proceed?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showHttpWarningDialog = false
+                        onConfirmSubmission()
+                    }
+                ) {
+                    Text("Proceed Anyway", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showHttpWarningDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     if (showTroubleshooter) {
         WordPressConnectTroubleshooterDialog(
             initialUrl = siteUrl,
@@ -85,6 +125,32 @@ fun WordPressLoginDialog(
                     authMode = "app_password"
                 }
                 showTroubleshooter = false
+            }
+        )
+    }
+
+    if (showWebAuthDialog) {
+        WordPressWebAuthorizationDialog(
+            siteUrl = if (siteUrl.isNotBlank() && siteUrl != "https://") siteUrl else "https://trendifyboost.com",
+            initialUsername = usernameOrEmail,
+            onDismiss = { showWebAuthDialog = false },
+            onAuthorized = { authSiteUrl, authUser, authAppPassword ->
+                showWebAuthDialog = false
+                val sanitizedUrl = cleanUrl(authSiteUrl)
+                val cleanAppPass = authAppPassword.replace(" ", "").trim()
+                siteUrl = sanitizedUrl
+                if (authUser.isNotBlank()) usernameOrEmail = authUser
+                password = cleanAppPass
+                authMode = "app_password"
+                onLogin(
+                    selectedSiteId,
+                    sanitizedUrl,
+                    siteName.ifBlank { "WordPress Site" },
+                    usernameOrEmail.trim(),
+                    cleanAppPass,
+                    selectedRole,
+                    rememberMe
+                )
             }
         )
     }
@@ -216,6 +282,24 @@ fun WordPressLoginDialog(
                         .fillMaxWidth()
                         .testTag("input_wp_site_url")
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        if (siteUrl.isBlank() || siteUrl == "https://") {
+                            siteUrl = "https://trendifyboost.com"
+                        }
+                        showWebAuthDialog = true
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("1-Click Web Authorization & Connect", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -410,17 +494,11 @@ fun WordPressLoginDialog(
                                 errorMessage = "Password is required"
                                 return@Button
                             }
-                            isSubmitting = true
-                            val cleanedPass = if (authMode == "app_password") password.replace(" ", "").trim() else password.trim()
-                            onLogin(
-                                selectedSiteId,
-                                sanitizedUrl,
-                                siteName,
-                                usernameOrEmail.trim(),
-                                cleanedPass,
-                                selectedRole,
-                                rememberMe
-                            )
+                            if (sanitizedUrl.startsWith("http://")) {
+                                showHttpWarningDialog = true
+                            } else {
+                                onConfirmSubmission()
+                            }
                         },
                         enabled = !isSubmitting,
                         colors = ButtonDefaults.buttonColors(containerColor = WordPressNavy),

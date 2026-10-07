@@ -1,6 +1,6 @@
 {
-  "name": "WPMobile Hub",
-  "description": "Universal mobile dashboard for WordPress & WooCommerce with multi-site management, block editor, e-commerce catalog, orders, and CRM.",
+  "name": "SiteDeck",
+  "description": "SiteDeck lets you manage your WordPress and WooCommerce sites, posts, products, and orders securely from your phone.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

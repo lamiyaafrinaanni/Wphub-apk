@@ -32,7 +32,7 @@ interface SiteDao {
     @Query("DELETE FROM sites WHERE id = :siteId")
     suspend fun deleteSite(siteId: String)
 
-    @Query("DELETE FROM sites WHERE id LIKE '%demo%' OR url LIKE '%.local%' OR name LIKE '%Demo%'")
+    @Query("DELETE FROM sites WHERE isDemo = 1 AND id LIKE 'site_demo_%'")
     suspend fun deleteDemoSites()
 
     @Query("DELETE FROM sites")
@@ -153,20 +153,6 @@ interface CouponDao {
     suspend fun clearAllCoupons()
 }
 
-@Dao
-interface WaterTelemetryDao {
-    @Query("SELECT * FROM water_telemetry WHERE siteId = :siteId LIMIT 1")
-    fun getTelemetryForSite(siteId: String): Flow<WaterTelemetryEntity?>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertTelemetry(telemetry: WaterTelemetryEntity)
-
-    @Update
-    suspend fun updateTelemetry(telemetry: WaterTelemetryEntity)
-
-    @Query("DELETE FROM water_telemetry")
-    suspend fun clearAllTelemetry()
-}
 
 @Dao
 interface NotificationDao {

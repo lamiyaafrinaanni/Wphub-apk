@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
+import com.example.data.security.CryptKeeper
 import com.example.data.local.SiteEntity
 import com.example.ui.theme.*
 import com.example.util.BiometricAuthManager
@@ -47,7 +48,9 @@ fun BiometricCredentialsVaultCard(
     var isAuthenticating by remember { mutableStateOf(false) }
     val biometricStatus = remember(context) { BiometricAuthManager.checkBiometricAvailability(context) }
 
-    val rawPassword = currentSite?.appPasswordToken ?: ""
+    val rawPassword = remember(currentSite?.appPasswordToken) {
+        CryptKeeper.decrypt(currentSite?.appPasswordToken.orEmpty())
+    }
     val maskedPassword = remember(rawPassword) {
         if (rawPassword.length > 8) {
             "${rawPassword.take(4)} •••• •••• ${rawPassword.takeLast(4)}"
@@ -209,7 +212,7 @@ fun BiometricCredentialsVaultCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (isUnlocked) rawPassword.ifBlank { "No Password Set" } else maskedPassword,
+                        text = if (isUnlocked) (if (rawPassword.isBlank()) "No Password Set" else rawPassword) else maskedPassword,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,

@@ -38,7 +38,69 @@ fun AddSiteDialog(
     var testResult by remember { mutableStateOf<String?>(null) }
     var isTestingConnection by remember { mutableStateOf(false) }
     var showTroubleshooter by remember { mutableStateOf(false) }
+    var showHttpWarningDialog by remember { mutableStateOf(false) }
+    var showWebAuthDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    fun cleanUrl(raw: String): String {
+        var url = raw.trim()
+        if (url.contains("/wp-admin")) {
+            url = url.substringBefore("/wp-admin")
+        }
+        if (url.contains("/wp-login.php")) {
+            url = url.substringBefore("/wp-login.php")
+        }
+        url = url.removeSuffix("/")
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            url = "https://$url"
+        }
+        return url
+    }
+
+    val onConfirmSubmission = {
+        val sanitizedUrl = cleanUrl(siteUrl)
+        if (sanitizedUrl.isNotBlank()) {
+            if (authMode == "credentials" && onLoginWithCredentials != null) {
+                onLoginWithCredentials(
+                    siteName.ifBlank { "WordPress Site" },
+                    sanitizedUrl,
+                    usernameOrEmail.trim().ifBlank { "admin" },
+                    password.trim().ifBlank { "password" }
+                )
+            } else {
+                val cleanedAppPass = appPassword.replace(" ", "").trim()
+                onConnectSite(
+                    siteName.ifBlank { "WordPress Site" },
+                    sanitizedUrl,
+                    cleanedAppPass
+                )
+            }
+            onDismiss()
+        }
+    }
+
+    if (showHttpWarningDialog) {
+        AlertDialog(
+            onDismissRequest = { showHttpWarningDialog = false },
+            title = { Text("Unsecured Connection Warning") },
+            text = { Text("You are connecting to an unencrypted HTTP site. Your login credentials and all site data will be transmitted in plain text across the network. Are you sure you want to proceed?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showHttpWarningDialog = false
+                        onConfirmSubmission()
+                    }
+                ) {
+                    Text("Proceed Anyway", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showHttpWarningDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     if (showTroubleshooter) {
         WordPressConnectTroubleshooterDialog(
@@ -57,19 +119,27 @@ fun AddSiteDialog(
         )
     }
 
-    fun cleanUrl(raw: String): String {
-        var url = raw.trim()
-        if (url.contains("/wp-admin")) {
-            url = url.substringBefore("/wp-admin")
-        }
-        if (url.contains("/wp-login.php")) {
-            url = url.substringBefore("/wp-login.php")
-        }
-        url = url.removeSuffix("/")
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "https://$url"
-        }
-        return url
+    if (showWebAuthDialog) {
+        WordPressWebAuthorizationDialog(
+            siteUrl = if (siteUrl.isNotBlank() && siteUrl != "https://") siteUrl else "https://trendifyboost.com",
+            initialUsername = usernameOrEmail,
+            onDismiss = { showWebAuthDialog = false },
+            onAuthorized = { authSiteUrl, authUser, authAppPassword ->
+                showWebAuthDialog = false
+                val sanitizedUrl = cleanUrl(authSiteUrl)
+                val cleanAppPass = authAppPassword.replace(" ", "").trim()
+                siteUrl = sanitizedUrl
+                if (authUser.isNotBlank()) usernameOrEmail = authUser
+                appPassword = cleanAppPass
+                authMode = "app_password"
+                onConnectSite(
+                    siteName.ifBlank { "WordPress Site" },
+                    sanitizedUrl,
+                    cleanAppPass
+                )
+                onDismiss()
+            }
+        )
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -182,6 +252,24 @@ fun AddSiteDialog(
                         .fillMaxWidth()
                         .testTag("input_site_url")
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        if (siteUrl.isBlank() || siteUrl == "https://") {
+                            siteUrl = "https://trendifyboost.com"
+                        }
+                        showWebAuthDialog = true
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("1-Click Web Authorization & Connect", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -328,23 +416,10 @@ fun AddSiteDialog(
                     Button(
                         onClick = {
                             val sanitizedUrl = cleanUrl(siteUrl)
-                            if (sanitizedUrl.isNotBlank()) {
-                                if (authMode == "credentials" && onLoginWithCredentials != null) {
-                                    onLoginWithCredentials(
-                                        siteName.ifBlank { "WordPress Site" },
-                                        sanitizedUrl,
-                                        usernameOrEmail.trim().ifBlank { "admin" },
-                                        password.trim().ifBlank { "password" }
-                                    )
-                                } else {
-                                    val cleanedAppPass = appPassword.replace(" ", "").trim()
-                                    onConnectSite(
-                                        siteName.ifBlank { "WordPress Site" },
-                                        sanitizedUrl,
-                                        cleanedAppPass
-                                    )
-                                }
-                                onDismiss()
+                            if (sanitizedUrl.startsWith("http://")) {
+                                showHttpWarningDialog = true
+                            } else {
+                                onConfirmSubmission()
                             }
                         },
                         modifier = Modifier

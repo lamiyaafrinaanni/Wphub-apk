@@ -282,6 +282,51 @@ class WordPressRestClient {
         }
     }
 
+    private fun executeWooCommerceRequest(
+        baseUrl: String,
+        routePath: String,
+        authHeader: String,
+        username: String,
+        tokenOrPass: String
+    ): okhttp3.Response {
+        val cleanPass = tokenOrPass.replace(" ", "").trim()
+        val cleanUser = username.trim()
+
+        // Attempt 1: Standard Authorization Header
+        val req1 = Request.Builder()
+            .url("$baseUrl$routePath")
+            .header("Authorization", authHeader)
+            .withStandardBrowserHeaders()
+            .get()
+            .build()
+
+        val resp1 = client.newCall(req1).execute()
+        if (resp1.isSuccessful) {
+            return resp1
+        }
+
+        // If 401/403 occurred (e.g. Hostinger/Apache stripped Authorization header), try Query Param authentication
+        if ((resp1.code == 401 || resp1.code == 403) && cleanUser.isNotBlank() && cleanPass.isNotBlank()) {
+            resp1.close()
+            val delimiter = if (routePath.contains("?")) "&" else "?"
+            val paramUrl = "$baseUrl$routePath${delimiter}consumer_key=$cleanUser&consumer_secret=$cleanPass"
+
+            val req2 = Request.Builder()
+                .url(paramUrl)
+                .withStandardBrowserHeaders()
+                .get()
+                .build()
+
+            val resp2 = client.newCall(req2).execute()
+            if (resp2.isSuccessful) {
+                return resp2
+            }
+            return resp2
+        }
+
+        return resp1
+    }
+
     suspend fun syncAllWordPressData(
         siteId: String,
         siteUrl: String,
@@ -433,7 +478,7 @@ class WordPressRestClient {
                                     category = categoryName,
                                     dateFormatted = dateFormatted,
                                     commentCount = comments,
-                                    viewCount = (15..280).random(),
+                                    viewCount = 0,
                                     featuredImageUrl = featuredImageUrl
                                 )
                             )
@@ -560,14 +605,7 @@ class WordPressRestClient {
         if (isWooCommerceActive) {
             // Fetch WooCommerce Products
             try {
-                val prodRequest = Request.Builder()
-                    .url("$cleanBaseUrl/wp-json/wc/v3/products?per_page=50")
-                    .header("Authorization", authHeader)
-                    .withStandardBrowserHeaders()
-                    .get()
-                    .build()
-
-                client.newCall(prodRequest).execute().use { prodResponse ->
+                executeWooCommerceRequest(cleanBaseUrl, "/wp-json/wc/v3/products?per_page=50", authHeader, username, tokenOrPass).use { prodResponse ->
                     if (prodResponse.isSuccessful) {
                         val prodBody = prodResponse.body?.string()
                         if (!prodBody.isNullOrBlank()) {
@@ -612,7 +650,7 @@ class WordPressRestClient {
                                         category = catName,
                                         productType = "$pType Product",
                                         imageUrl = imgUrl,
-                                        salesCount = (1..30).random()
+                                        salesCount = pObj.optInt("total_sales", 0)
                                     )
                                 )
                             }
@@ -625,14 +663,7 @@ class WordPressRestClient {
 
             // Fetch WooCommerce Orders
             try {
-                val ordersRequest = Request.Builder()
-                    .url("$cleanBaseUrl/wp-json/wc/v3/orders?per_page=50")
-                    .header("Authorization", authHeader)
-                    .withStandardBrowserHeaders()
-                    .get()
-                    .build()
-
-                client.newCall(ordersRequest).execute().use { ordResponse ->
+                executeWooCommerceRequest(cleanBaseUrl, "/wp-json/wc/v3/orders?per_page=50", authHeader, username, tokenOrPass).use { ordResponse ->
                     if (ordResponse.isSuccessful) {
                         val ordBody = ordResponse.body?.string()
                         if (!ordBody.isNullOrBlank()) {
@@ -701,14 +732,7 @@ class WordPressRestClient {
 
             // Fetch WooCommerce Customers
             try {
-                val custRequest = Request.Builder()
-                    .url("$cleanBaseUrl/wp-json/wc/v3/customers?per_page=50")
-                    .header("Authorization", authHeader)
-                    .withStandardBrowserHeaders()
-                    .get()
-                    .build()
-
-                client.newCall(custRequest).execute().use { custResponse ->
+                executeWooCommerceRequest(cleanBaseUrl, "/wp-json/wc/v3/customers?per_page=50", authHeader, username, tokenOrPass).use { custResponse ->
                     if (custResponse.isSuccessful) {
                         val custBody = custResponse.body?.string()
                         if (!custBody.isNullOrBlank()) {
@@ -746,14 +770,7 @@ class WordPressRestClient {
 
             // Fetch WooCommerce Coupons
             try {
-                val coupRequest = Request.Builder()
-                    .url("$cleanBaseUrl/wp-json/wc/v3/coupons?per_page=50")
-                    .header("Authorization", authHeader)
-                    .withStandardBrowserHeaders()
-                    .get()
-                    .build()
-
-                client.newCall(coupRequest).execute().use { coupResponse ->
+                executeWooCommerceRequest(cleanBaseUrl, "/wp-json/wc/v3/coupons?per_page=50", authHeader, username, tokenOrPass).use { coupResponse ->
                     if (coupResponse.isSuccessful) {
                         val coupBody = coupResponse.body?.string()
                         if (!coupBody.isNullOrBlank()) {
@@ -840,7 +857,7 @@ class WordPressRestClient {
             totalCategories = totalCategoriesCount,
             totalComments = totalCommentsCount,
             totalOrders = ordersList.size,
-            visitorsToday = (45..350).random(),
+            visitorsToday = 0,
             lastSyncTime = "Just now",
             username = username,
             userEmail = resolvedUserEmail,

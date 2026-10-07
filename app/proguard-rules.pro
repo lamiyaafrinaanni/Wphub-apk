@@ -1,21 +1,38 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ProGuard rules for WPMobile Hub
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep Room database and DAO classes
+-keep class * extends androidx.room.RoomDatabase
+-keep class * extends androidx.room.Dao
+-dontwarn androidx.room.limits.Limit
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Retrofit 2 rules
+-keepattributes Signature, InnerClasses, EnclosingMethod
+-dontwarn retrofit2.**
+-keep class retrofit2.** { *; }
+-keepclassmembers class * {
+    @retrofit2.http.** <methods>;
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# OkHttp 3 rules
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class okhttp3.** { *; }
+
+# Moshi rules for JSON serialization
+-keep class com.squareup.moshi.** { *; }
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+# Keep all generated JsonAdapters
+-keep class *JsonAdapter { *; }
+-keep class * { @com.squareup.moshi.JsonQualifier *; }
+# Keep @JsonClass annotated classes
+-keep @com.squareup.moshi.JsonClass class * { *; }
+
+# Kotlin Coroutines rules
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+-keepnames class kotlinx.coroutines.android.AndroidExceptionPreHandler {}
+-keepnames class kotlinx.coroutines.android.AndroidDispatcherFactory {}
+
+# Data Models and Entities to prevent deserialization failures
+-keep class com.example.data.local.** { *; }
+-keep class com.example.data.remote.** { *; }

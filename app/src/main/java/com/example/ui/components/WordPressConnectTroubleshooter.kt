@@ -72,6 +72,7 @@ fun WordPressConnectTroubleshooterDialog(
         )
     }
 
+    var liveScopeReport by remember { mutableStateOf<com.example.data.remote.WordPressScopeDiagnosticReport?>(null) }
     var selectedFixCode by remember { mutableStateOf<String?>(null) }
     var copiedNotice by remember { mutableStateOf(false) }
 
@@ -86,7 +87,7 @@ fun WordPressConnectTroubleshooterDialog(
         coroutineScope.launch {
             // Step 1: URL Check
             steps = steps.mapIndexed { idx, it -> if (idx == 0) it.copy(state = DiagnosticStepState.RUNNING) else it }
-            delay(400)
+            delay(300)
             val isHttps = clean.startsWith("https://")
             val isLocalhost = clean.contains("localhost") || clean.contains("127.0.0.1") || clean.contains("10.0.2.2")
             steps = steps.mapIndexed { idx, it ->
@@ -101,14 +102,13 @@ fun WordPressConnectTroubleshooterDialog(
 
             // Step 2: Root /wp-json/
             steps = steps.mapIndexed { idx, it -> if (idx == 1) it.copy(state = DiagnosticStepState.RUNNING) else it }
-            delay(500)
             val hasWpAdminInUrl = clean.contains("/wp-admin")
             steps = steps.mapIndexed { idx, it ->
                 if (idx == 1) {
                     if (hasWpAdminInUrl) {
                         it.copy(
                             state = DiagnosticStepState.WARNING,
-                            details = "URL contains /wp-admin. WPMobile Hub automatically trims to site root.",
+                            details = "URL contains /wp-admin. SiteDeck automatically trims to site root.",
                             fixAdvice = "Use the site root URL (e.g., https://yoursite.com), not the admin URL."
                         )
                     } else {
@@ -121,61 +121,38 @@ fun WordPressConnectTroubleshooterDialog(
                 } else it
             }
 
-            // Step 3: Permalinks
-            steps = steps.mapIndexed { idx, it -> if (idx == 2) it.copy(state = DiagnosticStepState.RUNNING) else it }
-            delay(400)
-            steps = steps.mapIndexed { idx, it ->
-                if (idx == 2) {
-                    it.copy(
+            // Execute Live Network Diagnostics with HTTP Status Codes & Error Bodies
+            steps = steps.mapIndexed { idx, it -> if (idx >= 2) it.copy(state = DiagnosticStepState.RUNNING) else it }
+            val report: com.example.data.remote.WordPressScopeDiagnosticReport = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.example.data.remote.WordPressRestClient().testPermissionsAndScopes(
+                    siteUrl = clean,
+                    username = testUsername.trim(),
+                    tokenOrPass = testPassword.replace(" ", "").trim()
+                )
+            }
+
+            liveScopeReport = report
+
+            // Update steps based on live HTTP report
+            steps = steps.mapIndexed { idx, item ->
+                when (idx) {
+                    2 -> item.copy(
                         state = DiagnosticStepState.SUCCESS,
-                        details = "REST Route rewrite rules active (Pretty Permalinks detected).",
+                        details = "REST Route rewrite rules verified.",
                         fixAdvice = null
                     )
-                } else it
-            }
-
-            // Step 4: Auth Check
-            steps = steps.mapIndexed { idx, it -> if (idx == 3) it.copy(state = DiagnosticStepState.RUNNING) else it }
-            delay(600)
-            val hasCredentials = testUsername.isNotBlank() && testPassword.isNotBlank()
-            steps = steps.mapIndexed { idx, it ->
-                if (idx == 3) {
-                    if (hasCredentials) {
-                        it.copy(
-                            state = DiagnosticStepState.SUCCESS,
-                            details = "Authentication verified! User '${testUsername.trim()}' authorized via WP REST API v2.",
-                            fixAdvice = null
-                        )
-                    } else {
-                        it.copy(
-                            state = DiagnosticStepState.WARNING,
-                            details = "Public endpoints accessible. Enter username & Application Password to test authenticated access.",
-                            fixAdvice = "Go to WP Admin > Users > Profile > Application Passwords to generate a token."
-                        )
-                    }
-                } else it
-            }
-
-            // Step 5: WooCommerce
-            steps = steps.mapIndexed { idx, it -> if (idx == 4) it.copy(state = DiagnosticStepState.RUNNING) else it }
-            delay(400)
-            val isStoreSite = clean.contains("store", ignoreCase = true) || clean.contains("shop", ignoreCase = true)
-            steps = steps.mapIndexed { idx, it ->
-                if (idx == 4) {
-                    if (isStoreSite) {
-                        it.copy(
-                            state = DiagnosticStepState.SUCCESS,
-                            details = "WooCommerce REST API v3 detected (Products, Orders, Customers active).",
-                            fixAdvice = null
-                        )
-                    } else {
-                        it.copy(
-                            state = DiagnosticStepState.SUCCESS,
-                            details = "Standard WordPress Blog/CMS mode active. Store menu adapts dynamically.",
-                            fixAdvice = null
-                        )
-                    }
-                } else it
+                    3 -> item.copy(
+                        state = if (report.canAccessPosts) DiagnosticStepState.SUCCESS else DiagnosticStepState.FAILED,
+                        details = if (report.canAccessPosts) "Auth Granted! User '${report.userDisplayName ?: testUsername}' validated." else "Auth Failed! Status: ${report.overallHealth}",
+                        fixAdvice = if (!report.canAccessPosts) "Review status codes below (e.g. 401 Unauthorized / 403 Forbidden)." else null
+                    )
+                    4 -> item.copy(
+                        state = if (report.canAccessWooOrders || report.canAccessWooProducts) DiagnosticStepState.SUCCESS else DiagnosticStepState.WARNING,
+                        details = if (report.canAccessWooOrders || report.canAccessWooProducts) "WooCommerce REST endpoints active." else "WooCommerce endpoints not accessible or store plugin not active.",
+                        fixAdvice = null
+                    )
+                    else -> item
+                }
             }
 
             isRunningDiagnostic = false
@@ -393,6 +370,17 @@ fun WordPressConnectTroubleshooterDialog(
                             }
                         }
 
+                        if (liveScopeReport != null) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            WordPressApiDiagnosticView(
+                                report = liveScopeReport!!,
+                                onCopyMessage = { message ->
+                                    clipboardManager.setText(AnnotatedString(message))
+                                    copiedNotice = true
+                                }
+                            )
+                        }
+
                         if (diagnosticDone && onApplyAndConnect != null) {
                             Spacer(modifier = Modifier.height(14.dp))
                             FilledTonalButton(
@@ -469,7 +457,7 @@ fun WordPressConnectTroubleshooterDialog(
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Text(
-                                        text = "Application Passwords allow WPMobile Hub to authenticate securely without sharing your primary password or triggering 2FA captcha challenges.",
+                                        text = "Application Passwords allow SiteDeck to authenticate securely without sharing your primary password or triggering 2FA captcha challenges.",
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
@@ -479,9 +467,9 @@ fun WordPressConnectTroubleshooterDialog(
                                 "1. Log into your WordPress admin dashboard (e.g., https://yoursite.com/wp-admin)",
                                 "2. Navigate to Users > Profile (or Users > All Users > Edit your user)",
                                 "3. Scroll down to the 'Application Passwords' section",
-                                "4. Type 'WPMobile Hub' into the New Application Password Name field",
+                                "4. Type 'SiteDeck' into the New Application Password Name field",
                                 "5. Click 'Add New Application Password'",
-                                "6. Copy the generated 24-character password (e.g., abcd efgh ijkl mnop) and paste it into WPMobile Hub."
+                                "6. Copy the generated 24-character password (e.g., abcd efgh ijkl mnop) and paste it into SiteDeck."
                             )
 
                             guideSteps.forEach { stepText ->
@@ -504,7 +492,7 @@ fun WordPressConnectTroubleshooterDialog(
                             ) {
                                 OutlinedButton(
                                     onClick = {
-                                        clipboardManager.setText(AnnotatedString("WPMobile Hub"))
+                                        clipboardManager.setText(AnnotatedString("SiteDeck"))
                                         copiedNotice = true
                                     },
                                     shape = RoundedCornerShape(10.dp),

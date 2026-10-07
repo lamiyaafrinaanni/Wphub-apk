@@ -167,24 +167,7 @@ class WordPressLogInterceptor(
     }
 
     private fun maskAuthHeader(authHeader: String): String {
-        return if (authHeader.startsWith("Basic ", ignoreCase = true)) {
-            val rawBase64 = authHeader.substring(6).trim()
-            try {
-                val decoded = String(Base64.decode(rawBase64, Base64.DEFAULT), Charsets.UTF_8)
-                val parts = decoded.split(":", limit = 2)
-                if (parts.size == 2) {
-                    val user = parts[0]
-                    val passMasked = "•".repeat(parts[1].length.coerceAtMost(8))
-                    "Basic $rawBase64 [Decoded: $user:$passMasked]"
-                } else {
-                    "Basic $rawBase64 [Decoded: $decoded]"
-                }
-            } catch (e: Exception) {
-                "Basic ${rawBase64.take(10)}..."
-            }
-        } else {
-            authHeader.take(15) + "..."
-        }
+        return "Basic [MASKED]"
     }
 
     private fun extractRequestBody(request: Request): String? {
@@ -215,6 +198,7 @@ class WordPressLogInterceptor(
         headers: Map<String, String>,
         body: String?
     ) {
+        if (!com.example.BuildConfig.DEBUG) return
         val sb = StringBuilder()
         sb.appendLine("┌─── [WP REST API REQUEST] ──────────────────────────────────────────────")
         sb.appendLine("│ Method : $method")
@@ -240,6 +224,7 @@ class WordPressLogInterceptor(
         responseBodyPreview: String?,
         diagnosticAdvice: String?
     ) {
+        if (!com.example.BuildConfig.DEBUG) return
         val sb = StringBuilder()
         val isError = statusCode !in 200..299
         val prefix = if (isError) "⚠️ [WP REST API ERROR $statusCode]" else "✅ [WP REST API RESPONSE $statusCode]"

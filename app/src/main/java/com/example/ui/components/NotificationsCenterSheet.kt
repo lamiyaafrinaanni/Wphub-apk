@@ -36,11 +36,7 @@ fun NotificationsCenterSheet(
     onMarkAllAsRead: () -> Unit,
     onClearAll: () -> Unit,
     onDeleteNotification: (String) -> Unit,
-    onUpdateSettings: (NotificationSettingsEntity) -> Unit,
-    onTriggerTestOrderAlert: () -> Unit,
-    onTriggerTestCommentAlert: () -> Unit,
-    onTriggerTestLowStockAlert: () -> Unit,
-    onTriggerTestInquiryAlert: (() -> Unit)? = null
+    onUpdateSettings: (NotificationSettingsEntity) -> Unit
 ) {
     var selectedFilter by remember { mutableStateOf("all") } // "all", "order", "comment", "stock", "inquiry"
     var showSettingsInSheet by remember { mutableStateOf(false) }
@@ -157,85 +153,7 @@ fun NotificationsCenterSheet(
                 }
             } else {
                 // Notifications List view
-
-                // Test push triggers toolbar
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = BgGradientEnd,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderSlate200),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "🚀 Push Notification Simulator",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryIndigo
-                            )
-                            Text(
-                                text = "Sends live system push",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextBodyMuted,
-                                fontSize = 10.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            FilledTonalButton(
-                                onClick = onTriggerTestOrderAlert,
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("btn_trigger_test_order")
-                            ) {
-                                Text("+ Order", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            FilledTonalButton(
-                                onClick = onTriggerTestCommentAlert,
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("btn_trigger_test_comment")
-                            ) {
-                                Text("+ Comment", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            FilledTonalButton(
-                                onClick = onTriggerTestLowStockAlert,
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("btn_trigger_test_stock")
-                            ) {
-                                Text("+ Low Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            if (onTriggerTestInquiryAlert != null) {
-                                FilledTonalButton(
-                                    onClick = onTriggerTestInquiryAlert,
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("btn_trigger_test_inquiry")
-                                ) {
-                                    Text("+ Inquiry", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 // Filters & Actions
                 Row(

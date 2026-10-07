@@ -113,10 +113,8 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
         if (site != null) repository.getCouponsForSite(site.id) else flowOf(emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val waterTelemetry: StateFlow<WaterTelemetryEntity?> = currentSite.flatMapLatest { site ->
-        if (site != null) repository.getTelemetryForSite(site.id) else flowOf(null)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    private val _externalActionRequest = MutableStateFlow<ExternalActionRequest?>(null)
+    val externalActionRequest: StateFlow<ExternalActionRequest?> = _externalActionRequest.asStateFlow()
 
     // Push Notifications
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -267,304 +265,7 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Trigger simulation alerts
-    fun triggerSimulatedOrderAlert() {
-        viewModelScope.launch {
-            val site = currentSite.value ?: return@launch
-            val settings = repository.getNotificationSettingsDirect(site.id)
-            if (settings?.ordersEnabled == false) {
-                _userMessage.value = "Orders alerts are disabled in Settings"
-                return@launch
-            }
-
-            val randomNum = (1044..1999).random()
-            val amounts = listOf(89.00, 149.50, 279.00, 420.00, 69.95)
-            val buyers = listOf("Alexander Wright", "Chloe Bennett", "Liam O'Connor", "Maya Patel", "David Kim")
-            val items = listOf("Wireless ANC Headphones", "Mechanical Keyboard", "USB-C Fast Charging Dock", "Desk Organizer Pad")
-            val buyer = buyers.random()
-            val amount = amounts.random()
-            val item = items.random()
-            val orderId = "${site.id}_ord_${System.currentTimeMillis()}"
-
-            // Insert new order in DB
-            val newOrder = OrderEntity(
-                id = orderId,
-                siteId = site.id,
-                orderNumber = "#$randomNum",
-                customerName = buyer,
-                customerEmail = "${buyer.lowercase().replace(" ", ".")}@example.com",
-                status = "processing",
-                totalAmount = amount,
-                itemsSummary = item,
-                dateFormatted = "Just now"
-            )
-            repository.insertOrder(newOrder)
-
-            // Create Notification
-            val notifId = (1000..9999).random()
-            val notifTitle = "🎉 New WooCommerce Order #$randomNum"
-            val notifMsg = "$buyer placed order #$randomNum for $amount ($item). Awaiting fulfillment."
-
-            val notifEntity = NotificationItemEntity(
-                id = "${site.id}_notif_${System.currentTimeMillis()}",
-                siteId = site.id,
-                type = "order",
-                title = notifTitle,
-                message = notifMsg,
-                targetType = "order",
-                targetId = orderId,
-                timestamp = System.currentTimeMillis(),
-                isRead = false,
-                extraData = "$amount • Processing"
-            )
-            repository.saveNotification(notifEntity)
-
-            // Post Android System Notification with key order details: Order ID and Total Amount
-            NotificationHelper.showWooCommerceOrderNotification(
-                context = getApplication(),
-                orderId = orderId,
-                orderNumber = "#$randomNum",
-                totalAmount = amount,
-                currency = "$",
-                customerName = buyer,
-                itemsSummary = item,
-                siteId = site.id,
-                siteName = site.name,
-                playDefaultSound = settings?.soundEnabled ?: true
-            )
-            _userMessage.value = "New WooCommerce Order #$randomNum ($$amount) received! Push notification sent."
-        }
-    }
-
-    /**
-     * Places a new WooCommerce customer order on the connected site and sends
-     * an instant push notification including key order details (Order ID and Total Amount).
-     */
-    fun placeWooCommerceOrder(
-        customerName: String,
-        customerEmail: String,
-        itemsSummary: String,
-        totalAmount: Double
-    ) {
-        viewModelScope.launch {
-            val site = currentSite.value ?: return@launch
-            val settings = repository.getNotificationSettingsDirect(site.id)
-
-            val randomNum = (2000..9999).random()
-            val orderId = "${site.id}_ord_${System.currentTimeMillis()}"
-            val finalName = customerName.ifBlank { "Valued Customer" }
-            val finalEmail = customerEmail.ifBlank { "customer@example.com" }
-            val finalItems = itemsSummary.ifBlank { "WordPress Store Products" }
-
-            val newOrder = OrderEntity(
-                id = orderId,
-                siteId = site.id,
-                orderNumber = "#$randomNum",
-                customerName = finalName,
-                customerEmail = finalEmail,
-                status = "processing",
-                totalAmount = totalAmount,
-                itemsSummary = finalItems,
-                dateFormatted = "Just now"
-            )
-            repository.insertOrder(newOrder)
-
-            // Save in-app notification
-            val notifTitle = "🛍️ New WooCommerce Order #$randomNum"
-            val notifMsg = "$finalName placed order #$randomNum for $${String.format(java.util.Locale.US, "%.2f", totalAmount)} ($finalItems)"
-            val notifEntity = NotificationItemEntity(
-                id = "${site.id}_notif_${System.currentTimeMillis()}",
-                siteId = site.id,
-                type = "order",
-                title = notifTitle,
-                message = notifMsg,
-                targetType = "order",
-                targetId = orderId,
-                timestamp = System.currentTimeMillis(),
-                isRead = false,
-                extraData = "$$totalAmount • Processing"
-            )
-            repository.saveNotification(notifEntity)
-
-            // Send Push Notification to device
-            NotificationHelper.showWooCommerceOrderNotification(
-                context = getApplication(),
-                orderId = orderId,
-                orderNumber = "#$randomNum",
-                totalAmount = totalAmount,
-                currency = "$",
-                customerName = finalName,
-                itemsSummary = finalItems,
-                siteId = site.id,
-                siteName = site.name,
-                playDefaultSound = settings?.soundEnabled ?: true
-            )
-            _userMessage.value = "Order #$randomNum placed! Push notification dispatched with ID & Total ($$totalAmount)"
-        }
-    }
-
-    fun triggerSimulatedCommentAlert() {
-        viewModelScope.launch {
-            val site = currentSite.value ?: return@launch
-            val settings = repository.getNotificationSettingsDirect(site.id)
-            if (settings?.commentsEnabled == false) {
-                _userMessage.value = "Comment alerts are disabled in Settings"
-                return@launch
-            }
-
-            val postList = repository.getPostsForSite(site.id).firstOrNull() ?: emptyList()
-            val targetPost = postList.firstOrNull { it.status == "published" } ?: postList.firstOrNull()
-            val postTitle = targetPost?.title ?: "Launching Our Next-Gen Flagship Audio"
-            val postId = targetPost?.id
-
-            val commenters = listOf("Sarah Jenkins", "Devon Miles", "Oliver Chen", "Priya Sharma")
-            val comments = listOf(
-                "Great review! Does this firmware release include support for LE Audio and LC3 codec?",
-                "Will there be an option to purchase extended warranty for EU customers?",
-                "Appreciate the in-depth comparison. Really helped our design studio make a choice!",
-                "Are these compatible with standard 75mm VESA mounts?"
-            )
-            val commenter = commenters.random()
-            val commentText = comments.random()
-
-            val notifId = (1000..9999).random()
-            val notifTitle = "💬 New Comment on '$postTitle'"
-            val notifMsg = "$commenter: \"$commentText\""
-
-            val notifEntity = NotificationItemEntity(
-                id = "${site.id}_notif_${System.currentTimeMillis()}",
-                siteId = site.id,
-                type = "comment",
-                title = notifTitle,
-                message = notifMsg,
-                targetType = "comment",
-                targetId = postId,
-                timestamp = System.currentTimeMillis(),
-                isRead = false,
-                extraData = "$commenter • Discussion"
-            )
-            repository.saveNotification(notifEntity)
-
-            NotificationHelper.showCommentNotification(
-                context = getApplication(),
-                postId = postId,
-                postTitle = postTitle,
-                authorName = commenter,
-                commentSnippet = commentText,
-                siteId = site.id,
-                playDefaultSound = settings?.soundEnabled ?: true
-            )
-            _userMessage.value = "New comment alert dispatched!"
-        }
-    }
-
-    fun triggerSimulatedLowStockAlert() {
-        viewModelScope.launch {
-            val site = currentSite.value ?: return@launch
-            val settings = repository.getNotificationSettingsDirect(site.id)
-            if (settings?.lowStockEnabled == false) {
-                _userMessage.value = "Low stock alerts are disabled in Settings"
-                return@launch
-            }
-
-            val productList = repository.getProductsForSite(site.id).firstOrNull() ?: emptyList()
-            val threshold = settings?.lowStockThreshold ?: 5
-            val targetProduct = productList.firstOrNull()
-            val prodName = targetProduct?.name ?: "Featured Store Product"
-            val prodId = targetProduct?.id ?: "${site.id}_prod_stock_test"
-            val remainingStock = (1..threshold).random()
-
-            // Update product stock in DB
-            targetProduct?.let {
-                val updated = it.copy(
-                    stockQuantity = remainingStock,
-                    stockStatus = if (remainingStock <= 0) "outofstock" else "lowstock"
-                )
-                repository.saveProduct(updated)
-            }
-
-            val notifTitle = "⚠️ Low Stock Alert: $prodName"
-            val notifMsg = "Inventory dipped to $remainingStock units remaining (Threshold is ≤ $threshold units). Restock advised."
-
-            val notifEntity = NotificationItemEntity(
-                id = "${site.id}_notif_${System.currentTimeMillis()}",
-                siteId = site.id,
-                type = "stock",
-                title = notifTitle,
-                message = notifMsg,
-                targetType = "product",
-                targetId = prodId,
-                timestamp = System.currentTimeMillis(),
-                isRead = false,
-                extraData = "$remainingStock in stock (Threshold ≤ $threshold)"
-            )
-            repository.saveNotification(notifEntity)
-
-            NotificationHelper.showLowStockNotification(
-                context = getApplication(),
-                productId = prodId,
-                productName = prodName,
-                sku = targetProduct?.sku ?: "SKU-APX-01",
-                currentStock = remainingStock,
-                siteId = site.id,
-                playDefaultSound = settings?.soundEnabled ?: true
-            )
-            _userMessage.value = "Low stock alert ($remainingStock left) dispatched!"
-        }
-    }
-
-    fun triggerSimulatedInquiryAlert() {
-        viewModelScope.launch {
-            val site = currentSite.value ?: return@launch
-            val settings = repository.getNotificationSettingsDirect(site.id)
-            if (settings?.customerInquiriesEnabled == false) {
-                _userMessage.value = "Customer inquiry alerts are disabled in Settings"
-                return@launch
-            }
-
-            val customerList = repository.getCustomersForSite(site.id).firstOrNull() ?: emptyList()
-            val targetCustomer = customerList.randomOrNull()
-            val custName = targetCustomer?.name ?: "Eleanor Vance"
-            val custEmail = targetCustomer?.email ?: "eleanor.vance@example.com"
-            val custId = targetCustomer?.id
-
-            val inquiries = listOf(
-                "Enterprise Licensing" to "Looking to deploy your WooCommerce extension across 14 multisite instances. Could you provide a volume quotation?",
-                "Custom Integration" to "Inquiring about REST API webhooks for automated ERP stock synchronization.",
-                "Order Support" to "Requested expedited DHL shipping change for recent wholesale purchase."
-            )
-            val (subject, messageText) = inquiries.random()
-
-            val notifTitle = "📩 Customer Inquiry: $subject"
-            val notifMsg = "$custName ($custEmail): \"$messageText\""
-
-            val notifEntity = NotificationItemEntity(
-                id = "${site.id}_notif_${System.currentTimeMillis()}",
-                siteId = site.id,
-                type = "inquiry",
-                title = notifTitle,
-                message = notifMsg,
-                targetType = "customer",
-                targetId = custId,
-                timestamp = System.currentTimeMillis(),
-                isRead = false,
-                extraData = "$custName • Inquiry"
-            )
-            repository.saveNotification(notifEntity)
-
-            NotificationHelper.showCustomerInquiryNotification(
-                context = getApplication(),
-                customerId = custId,
-                customerName = custName,
-                customerEmail = custEmail,
-                subject = subject,
-                messageSnippet = messageText,
-                siteId = site.id,
-                playDefaultSound = settings?.soundEnabled ?: true
-            )
-            _userMessage.value = "Customer inquiry from $custName dispatched!"
-        }
-    }
+    // Live notification system handles live real-time webhook push payloads in production.
 
     fun setOrderFilter(filter: String) {
         _orderFilter.value = filter
@@ -721,8 +422,8 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
                     stepIndex = 1,
                     name = "1. URL Validation",
                     description = "Verifying URL format, DNS resolution and TLS/SSL certificate...",
-                    state = VerificationStepState.IDLE,
-                    subLogs = listOf("Pending URL format & host reachability check")
+                    state = VerificationStepState.IN_PROGRESS,
+                    subLogs = listOf("Initiating pre-flight host reachability check...")
                 ),
                 LiveVerificationStep(
                     stepIndex = 2,
@@ -741,7 +442,41 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
             )
             _liveVerificationSteps.value = initialSteps
 
+            // Perform rapid pre-flight host reachability check
+            val reachability = com.example.util.NetworkReachability.verifyHostReachability(cleanUrl)
+            if (reachability is com.example.util.ReachabilityResult.Unreachable) {
+                val failedSteps = listOf(
+                    LiveVerificationStep(
+                        stepIndex = 1,
+                        name = "1. URL Validation",
+                        description = "Verifying URL format, DNS resolution and TLS/SSL certificate...",
+                        state = VerificationStepState.FAILURE,
+                        subLogs = listOf(
+                            "❌ Pre-flight Host Reachability Check FAILED!",
+                            "Reason: ${reachability.reason}",
+                            "Error Details: ${reachability.technicalDetails}"
+                        )
+                    ),
+                    initialSteps[1],
+                    initialSteps[2]
+                )
+                _liveVerificationSteps.value = failedSteps
+                _isVerifyingConnection.value = false
+                onError("Site Unreachable: ${reachability.reason}")
+                _userMessage.value = "Host Unreachable: Verify your URL is correct and online."
+                return@launch
+            }
+
+            // Reachable! Let's update Step 1 to success and proceed
             val currentStepsMap = initialSteps.associateBy { it.stepIndex }.toMutableMap()
+            currentStepsMap[1] = LiveVerificationStep(
+                stepIndex = 1,
+                name = "1. URL Validation",
+                description = "Verifying URL format, DNS resolution and TLS/SSL certificate...",
+                state = VerificationStepState.SUCCESS,
+                subLogs = listOf("✅ Pre-flight check successful: Host is online and responding.")
+            )
+            _liveVerificationSteps.value = currentStepsMap.values.sortedBy { it.stepIndex }
 
             val result = repository.performLiveConnectionChecks(
                 siteUrl = cleanUrl,
@@ -784,24 +519,6 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun connectWithDemoSite(onSuccess: (SiteEntity) -> Unit) {
-        viewModelScope.launch {
-            _isSyncing.value = true
-            delay(500)
-            val demo = repository.loginToWordPressSite(
-                siteId = "site_demo_apex",
-                siteUrl = "https://apex-wp-store.local",
-                siteName = "Apex WP Store & Studio",
-                usernameOrEmail = "admin",
-                passwordOrToken = "demo-app-pass-token-2026",
-                role = "Administrator",
-                displayName = "Site Administrator"
-            )
-            _isSyncing.value = false
-            _userMessage.value = "Connected to Apex WP Demo Site!"
-            onSuccess(demo)
-        }
-    }
 
     fun loginWithWordPress(
         siteId: String?,
@@ -862,17 +579,10 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun removeDemoSites() {
-        viewModelScope.launch {
-            repository.removeDemoSites()
-            _userMessage.value = "All demo sites have been removed."
-        }
-    }
-
-    fun signOutAllAndClearDemoData() {
+    fun signOutAllAndResetDatabase() {
         viewModelScope.launch {
             repository.clearAllDataAndSignOut()
-            _userMessage.value = "Signed out of all sites. All demo and mock data removed."
+            _userMessage.value = "Signed out of all WordPress sites. All local database caches have been cleared."
         }
     }
 
@@ -1026,22 +736,33 @@ class WPHubViewModel(application: Application) : AndroidViewModel(application) {
             _userMessage.value = "Discount coupon ${coupon.code} created"
         }
     }
-
-    fun toggleWaterPump() {
-        viewModelScope.launch {
-            val telemetry = waterTelemetry.value ?: return@launch
-            val updated = telemetry.copy(pumpRunning = !telemetry.pumpRunning)
-            repository.updateTelemetry(updated)
-            _userMessage.value = if (updated.pumpRunning) "Facility Water Pump Started" else "Facility Water Pump Stopped"
-        }
+    fun requestExternalAction(
+        destinationTab: String?,
+        targetType: String?,
+        targetId: String?,
+        siteId: String?
+    ) {
+        _externalActionRequest.value = ExternalActionRequest(destinationTab, targetType, targetId, siteId)
     }
 
-    fun toggleWaterAutoMode() {
-        viewModelScope.launch {
-            val telemetry = waterTelemetry.value ?: return@launch
-            val updated = telemetry.copy(autoMode = !telemetry.autoMode)
-            repository.updateTelemetry(updated)
-            _userMessage.value = if (updated.autoMode) "IoT Automation Mode: Enabled" else "IoT Automation Mode: Manual Override"
-        }
+    fun approveExternalAction(request: ExternalActionRequest) {
+        handleNotificationNavigation(
+            destinationTab = request.destinationTab,
+            targetType = request.targetType,
+            targetId = request.targetId,
+            siteId = request.siteId
+        )
+        _externalActionRequest.value = null
+    }
+
+    fun declineExternalAction() {
+        _externalActionRequest.value = null
     }
 }
+
+data class ExternalActionRequest(
+    val destinationTab: String?,
+    val targetType: String?,
+    val targetId: String?,
+    val siteId: String?
+)

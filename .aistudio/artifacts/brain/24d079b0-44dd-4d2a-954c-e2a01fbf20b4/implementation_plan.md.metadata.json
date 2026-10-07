@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for creating a GutenbergEditor WebView Compose component with WordPress block editor JS bridge and mobile optimization.",
-  "updatedAt":  "2026-09-27T22:42:32.116844797Z",
-  "requestFeedback":  true,
-  "userFacing":  true
+  "summary": "Implementation plan to audit the codebase and completely remove the Apex WP Demo Site option and offline mock data generators.",
+  "updatedAt": "2026-10-07T07:51:11.671025801Z",
+  "requestFeedback": true,
+  "userFacing": true
 }

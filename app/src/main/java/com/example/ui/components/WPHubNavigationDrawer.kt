@@ -525,7 +525,7 @@ fun WPHubNavigationDrawerContent(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "WPMobile Hub v2.8 • WP REST v2 Engine",
+                        text = "SiteDeck v2.8 • WP REST v2 Engine",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         fontSize = 10.sp

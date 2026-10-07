@@ -29,7 +29,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.local.NotificationSettingsEntity
 import com.example.data.local.PluginEntity
 import com.example.data.local.SiteEntity
-import com.example.data.local.WaterTelemetryEntity
 import com.example.data.remote.WordPressApiLogEntry
 import com.example.data.remote.WordPressLogStore
 import com.example.ui.components.BiometricCredentialsVaultCard
@@ -41,7 +40,6 @@ import com.example.ui.theme.*
 @Composable
 fun ToolsScreen(
     plugins: List<PluginEntity>,
-    waterTelemetry: WaterTelemetryEntity?,
     notificationSettings: NotificationSettingsEntity? = null,
     currentSite: SiteEntity? = null,
     allSites: List<SiteEntity> = emptyList(),
@@ -51,16 +49,10 @@ fun ToolsScreen(
     onOpenLoginDialog: () -> Unit = {},
     onLogout: () -> Unit = {},
     onSignOutAll: () -> Unit = {},
-    onSignOutAllAndClearDemoData: () -> Unit = {},
+    onSignOutAllAndResetDatabase: () -> Unit = {},
     onUpdateNotificationSettings: (NotificationSettingsEntity) -> Unit = {},
-    onTriggerTestOrderAlert: () -> Unit = {},
-    onTriggerTestCommentAlert: () -> Unit = {},
-    onTriggerTestLowStockAlert: () -> Unit = {},
-    onTriggerTestInquiryAlert: () -> Unit = {},
     onTogglePlugin: (String, Boolean) -> Unit,
     onUpdatePlugin: (String, String) -> Unit,
-    onToggleWaterPump: () -> Unit,
-    onToggleWaterAutoMode: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
     var selectedToolsSubTab by remember { mutableIntStateOf(0) }
@@ -71,19 +63,19 @@ fun ToolsScreen(
         AlertDialog(
             onDismissRequest = { showPurgeConfirmDialog = false },
             icon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = RoseError) },
-            title = { Text("Sign Out & Remove Demo Data") },
+            title = { Text("Sign Out & Reset Database") },
             text = {
-                Text("This will sign out of all WordPress sites and remove all demo and mock data from the local database. You will return to the dedicated WordPress login screen.")
+                Text("This will sign out of all WordPress sites and permanently wipe all cached data from the local database. You will return to the site connection screen.")
             },
             confirmButton = {
                 Button(
                     onClick = {
                         showPurgeConfirmDialog = false
-                        onSignOutAllAndClearDemoData()
+                        onSignOutAllAndResetDatabase()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RoseError)
                 ) {
-                    Text("Remove All & Sign Out", color = Color.White)
+                    Text("Reset & Sign Out", color = Color.White)
                 }
             },
             dismissButton = {
@@ -150,13 +142,6 @@ fun ToolsScreen(
             Tab(
                 selected = selectedToolsSubTab == 4,
                 onClick = { selectedToolsSubTab = 4 },
-                text = { Text("Water & Utility", fontWeight = FontWeight.Bold) },
-                icon = { Icon(Icons.Default.WaterDrop, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                modifier = Modifier.testTag("tab_water_utility")
-            )
-            Tab(
-                selected = selectedToolsSubTab == 5,
-                onClick = { selectedToolsSubTab = 5 },
                 text = { Text("REST Endpoints", fontWeight = FontWeight.Bold) },
                 icon = { Icon(Icons.Default.Api, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 modifier = Modifier.testTag("tab_rest_api")
@@ -224,66 +209,6 @@ fun ToolsScreen(
             1 -> {
                 // Push & Alerts Configuration
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Test Trigger Bar
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = "🔔 NOTIFICATION SIMULATOR & TEST HARNESS",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                letterSpacing = 0.8.sp
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Dispatch mock alerts to test deep-linking navigation to Orders, Comments, or Products.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                FilledTonalButton(
-                                    onClick = onTriggerTestOrderAlert,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-                                ) {
-                                    Text("+ Order", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                                FilledTonalButton(
-                                    onClick = onTriggerTestCommentAlert,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-                                ) {
-                                    Text("+ Comment", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                                FilledTonalButton(
-                                    onClick = onTriggerTestLowStockAlert,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-                                ) {
-                                    Text("+ Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                                FilledTonalButton(
-                                    onClick = onTriggerTestInquiryAlert,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)
-                                ) {
-                                    Text("+ Inquiry", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-
                     NotificationSettingsTab(
                         settings = notificationSettings ?: NotificationSettingsEntity(siteId = "default"),
                         onSaveSettings = onUpdateNotificationSettings
@@ -400,22 +325,24 @@ fun ToolsScreen(
                                     OutlinedButton(
                                         onClick = onSignOutAll,
                                         shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.weight(1f).testTag("btn_sign_out_all")
+                                        modifier = if (com.example.BuildConfig.DEBUG) Modifier.weight(1f).testTag("btn_sign_out_all") else Modifier.fillMaxWidth().testTag("btn_sign_out_all")
                                     ) {
                                         Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text("Sign Out All")
                                     }
 
-                                    Button(
-                                        onClick = { showPurgeConfirmDialog = true },
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = RoseError),
-                                        modifier = Modifier.weight(1f).testTag("btn_purge_demo_data")
-                                    ) {
-                                        Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Purge Demo Data", color = Color.White, fontSize = 12.sp)
+                                    if (com.example.BuildConfig.DEBUG) {
+                                        Button(
+                                            onClick = { showPurgeConfirmDialog = true },
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = RoseError),
+                                            modifier = Modifier.weight(1f).testTag("btn_purge_demo_data")
+                                        ) {
+                                            Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Reset Database", color = Color.White, fontSize = 12.sp)
+                                        }
                                     }
                                 }
 
@@ -453,208 +380,6 @@ fun ToolsScreen(
                 }
             }
             4 -> {
-                // Water & Utility Telemetry
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    item {
-                        Card(
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(20.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text(
-                                            text = waterTelemetry?.facilityName ?: "Main Facility Reservoir",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "IoT Telemetry Station #04",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (waterTelemetry?.pumpRunning == true) EmeraldSuccessBg else AmberWarningBg
-                                    ) {
-                                        Text(
-                                            text = if (waterTelemetry?.pumpRunning == true) "PUMP ACTIVE" else "PUMP IDLE",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (waterTelemetry?.pumpRunning == true) EmeraldSuccess else AmberWarning,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                // Tank Level Progress
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "Reservoir Tank Level",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = "${waterTelemetry?.tankLevelPercent ?: 78}%",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = PrimaryIndigo
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                LinearProgressIndicator(
-                                    progress = { (waterTelemetry?.tankLevelPercent ?: 78) / 100f },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(10.dp)
-                                        .clip(CircleShape),
-                                    color = PrimaryIndigo,
-                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    MetricSmallCard(
-                                        title = "Water Pressure",
-                                        value = "${waterTelemetry?.pressurePsi ?: 46.5} PSI",
-                                        subtitle = "Optimal Range (40-55)",
-                                        isPositive = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    MetricSmallCard(
-                                        title = "Live Flow Rate",
-                                        value = "${waterTelemetry?.flowRateLpm ?: 12.4} LPM",
-                                        subtitle = "Steady Circulation",
-                                        isPositive = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Interactive Controls Card
-                    item {
-                        Card(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(18.dp)) {
-                                Text(
-                                    text = "Telemetric Controls & Overrides",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(14.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Main Induction Pump",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            text = "Control facility intake valve and motor",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Switch(
-                                        checked = waterTelemetry?.pumpRunning == true,
-                                        onCheckedChange = { onToggleWaterPump() },
-                                        modifier = Modifier.testTag("switch_water_pump")
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(12.dp))
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "IoT Autonomous Mode",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            text = "Auto-regulates pressure and refills threshold",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Switch(
-                                        checked = waterTelemetry?.autoMode == true,
-                                        onCheckedChange = { onToggleWaterAutoMode() },
-                                        modifier = Modifier.testTag("switch_water_auto_mode")
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    FilledTonalButton(
-                                        onClick = { onShowMessage("Triggered automated reservoir backwash cycle") },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Flush Lines")
-                                    }
-                                    Button(
-                                        onClick = { onShowMessage("Telemetry report exported to PDF") },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Telemetry Log")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    item {
-                        Spacer(modifier = Modifier.height(24.dp))
-                    }
-                }
-            }
-            5 -> {
                 // REST API Endpoints & Live Log Inspector
                 val apiLogs by WordPressLogStore.logs.collectAsStateWithLifecycle()
                 var selectedLogFilter by remember { mutableIntStateOf(0) } // 0: All, 1: 2xx, 2: 4xx, 3: 5xx / Errors
@@ -852,7 +577,7 @@ fun ToolsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Standard WP-JSON route schema supported by WPMobile Hub",
+                            text = "Standard WP-JSON route schema supported by SiteDeck",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

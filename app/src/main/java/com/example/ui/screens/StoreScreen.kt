@@ -26,7 +26,6 @@ import com.example.data.local.ProductEntity
 import com.example.data.model.WooCommerceOrder
 import com.example.data.model.WooCommerceOrderStatus
 import com.example.data.model.WooOrderFilterState
-import com.example.ui.components.SimulateOrderDialog
 import com.example.ui.components.WooCommerceRecentOrdersComponent
 import com.example.ui.theme.*
 
@@ -45,15 +44,12 @@ fun StoreScreen(
     onSaveProduct: (id: String?, name: String, sku: String, regPrice: Double, salePrice: Double?, stockQty: Int, category: String, type: String) -> Unit,
     onDeleteProduct: (String) -> Unit,
     onSaveCoupon: (code: String, type: String, amount: Double, limit: Int) -> Unit,
-    onShowMessage: (String) -> Unit,
-    onPlaceCustomOrder: ((customerName: String, customerEmail: String, itemsSummary: String, totalAmount: Double) -> Unit)? = null,
-    onTriggerSimulatedOrderAlert: (() -> Unit)? = null
+    onShowMessage: (String) -> Unit
 ) {
     var selectedStoreSubTab by remember { mutableIntStateOf(if (targetOrderId != null) 1 else 0) }
     var showAddProductDialog by remember { mutableStateOf(false) }
     var editingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var showAddCouponDialog by remember { mutableStateOf(false) }
-    var showSimulateOrderDialog by remember { mutableStateOf(false) }
     var selectedOrderForDetail by remember { mutableStateOf<OrderEntity?>(null) }
 
     LaunchedEffect(targetOrderId) {
@@ -145,7 +141,7 @@ fun StoreScreen(
                 }
             }
             1 -> {
-                // Orders Stream with Live Push Notification Dispatcher
+                // Orders Stream
                 Box(modifier = Modifier.fillMaxSize()) {
                     WooCommerceRecentOrdersComponent(
                         orders = orders,
@@ -153,29 +149,9 @@ fun StoreScreen(
                             statusFilter = if (orderFilter == "all") null else WooCommerceOrderStatus.fromKey(orderFilter)
                         ),
                         onOrderStatusChange = onOrderStatusChange,
-                        onSimulateNewOrderClick = { showSimulateOrderDialog = true },
+                        onSimulateNewOrderClick = null,
                         onShowMessage = onShowMessage
                     )
-
-                    // Floating action button to place/simulate a new WooCommerce order with push notification
-                    FloatingActionButton(
-                        onClick = { showSimulateOrderDialog = true },
-                        containerColor = WooPurple,
-                        contentColor = androidx.compose.ui.graphics.Color.White,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(16.dp)
-                            .testTag("fab_simulate_order")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.NotificationsActive, contentDescription = "Place New Order")
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("New Order (+ Push)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                    }
                 }
             }
             2 -> {
@@ -281,20 +257,7 @@ fun StoreScreen(
         )
     }
 
-    // Simulate WooCommerce Order Dialog
-    if (showSimulateOrderDialog) {
-        SimulateOrderDialog(
-            siteName = "WooCommerce Store",
-            onDismiss = { showSimulateOrderDialog = false },
-            onPlaceOrder = { name, email, items, total ->
-                if (onPlaceCustomOrder != null) {
-                    onPlaceCustomOrder(name, email, items, total)
-                } else {
-                    onTriggerSimulatedOrderAlert?.invoke()
-                }
-            }
-        )
-    }
+    // No simulation dialog needed in production live-only environment
 }
 
 @Composable

@@ -76,13 +76,13 @@ fun WordPressWebAuthorizationDialog(
 
     val initialAuthUrl = remember(cleanBaseUrl) {
         try {
-            val encodedAppName = URLEncoder.encode("WPMobile Hub", "UTF-8")
+            val encodedAppName = URLEncoder.encode("SiteDeck", "UTF-8")
             val encodedAppId = URLEncoder.encode(applicationUuid, "UTF-8")
             val encodedSuccess = URLEncoder.encode(callbackSuccessUrl, "UTF-8")
             val encodedReject = URLEncoder.encode(callbackRejectUrl, "UTF-8")
             "$cleanBaseUrl/wp-admin/authorize-application.php?app_name=$encodedAppName&app_id=$encodedAppId&success_url=$encodedSuccess&reject_url=$encodedReject"
         } catch (e: Exception) {
-            val encodedAppName = URLEncoder.encode("WPMobile Hub", "UTF-8")
+            val encodedAppName = URLEncoder.encode("SiteDeck", "UTF-8")
             val encodedAppId = URLEncoder.encode(applicationUuid, "UTF-8")
             "$cleanBaseUrl/wp-admin/authorize-application.php?app_name=$encodedAppName&app_id=$encodedAppId"
         }
@@ -264,6 +264,8 @@ fun WordPressWebAuthorizationDialog(
                                 }
                                 settings.apply {
                                     javaScriptEnabled = true
+                                    allowFileAccess = false
+                                    allowContentAccess = false
                                     domStorageEnabled = true
                                     databaseEnabled = true
                                     loadWithOverviewMode = true
@@ -394,16 +396,36 @@ fun WordPressWebAuthorizationDialog(
                                         }
                                     }
 
+                                    private fun isSameHost(url1: String, url2: String): Boolean {
+                                        val host1 = Uri.parse(url1).host?.lowercase()?.removePrefix("www.") ?: ""
+                                        val host2 = Uri.parse(url2).host?.lowercase()?.removePrefix("www.") ?: ""
+                                        return host1.isNotEmpty() && host1 == host2
+                                    }
+
                                     private fun checkUrlForAuthorizedCredentials(url: String): Boolean {
                                         try {
                                             val uri = Uri.parse(url)
+                                            
+                                            // R-SEC-7: Verify that redirect host matches cleanBaseUrl
+                                            if (uri.getQueryParameter("password") != null && !isSameHost(url, cleanBaseUrl)) {
+                                                onShowMessage("Security Alert: Authorization host mismatch detected!")
+                                                return false
+                                            }
+
                                             val passwordParam = uri.getQueryParameter("password")
                                             val userParam = uri.getQueryParameter("user_login") ?: initialUsername
                                             val siteParam = uri.getQueryParameter("site_url") ?: cleanBaseUrl
 
+                                            // R-SEC-7: Verify host of site_url param against cleanBaseUrl
+                                            if (!passwordParam.isNullOrBlank() && !isSameHost(siteParam, cleanBaseUrl)) {
+                                                onShowMessage("Security Alert: Authorization redirect domain mismatch detected!")
+                                                return false
+                                            }
+
                                             if (!passwordParam.isNullOrBlank()) {
                                                 onShowMessage("Permission Approved! Connecting...")
-                                                onAuthorized(siteParam, userParam.ifBlank { "admin" }, passwordParam)
+                                                val cleanedPass = passwordParam.replace(" ", "").trim()
+                                                onAuthorized(siteParam, userParam.ifBlank { "admin" }, cleanedPass)
                                                 return true
                                             }
 

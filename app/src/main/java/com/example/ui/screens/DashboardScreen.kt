@@ -45,7 +45,6 @@ fun DashboardScreen(
     posts: List<PostEntity> = emptyList(),
     plugins: List<PluginEntity> = emptyList(),
     customers: List<CustomerEntity> = emptyList(),
-    waterTelemetry: WaterTelemetryEntity? = null,
     dashboardWidgets: List<DashboardWidgetEntity> = emptyList(),
     notifications: List<NotificationItemEntity> = emptyList(),
     isRefreshing: Boolean = false,
@@ -218,12 +217,6 @@ fun DashboardScreen(
                         CrmInquiriesWidget(
                             customers = customers,
                             onOpenCrm = { onNavigateTab(HubTab.CRM) }
-                        )
-                    }
-                    "telemetry_iot" -> item(key = widget.id) {
-                        TelemetryWidget(
-                            telemetry = waterTelemetry,
-                            onOpenTools = { onNavigateTab(HubTab.TOOLS) }
                         )
                     }
                     "rest_api" -> item(key = widget.id) {
@@ -513,7 +506,7 @@ private fun QuickStatsWidget(
         ) {
             MetricCard(
                 title = "Visitor Traffic",
-                value = "${currentSite?.visitorsToday ?: 420}",
+                value = "${currentSite?.visitorsToday ?: 0}",
                 subtitle = "Unique visitors today",
                 icon = Icons.Default.Visibility,
                 accentColor = WPCyan,
@@ -1263,47 +1256,6 @@ private fun CrmInquiriesWidget(
     }
 }
 
-@Composable
-private fun TelemetryWidget(
-    telemetry: WaterTelemetryEntity?,
-    onOpenTools: () -> Unit
-) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderSlate200),
-        modifier = Modifier.fillMaxWidth().testTag("widget_telemetry")
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.WaterDrop, contentDescription = null, tint = PrimaryIndigo, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Operations & IoT Telemetry",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = TextDark
-                    )
-                }
-                TextButton(onClick = onOpenTools, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                    Text("Controls →", color = PrimaryIndigo, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "${telemetry?.facilityName ?: "Facility Hub"} • Level: ${telemetry?.tankLevelPercent ?: 78}% • Pressure: ${telemetry?.pressurePsi ?: 46.5} PSI",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextBodyMuted,
-                fontSize = 12.sp
-            )
-        }
-    }
-}
 
 @Composable
 private fun RestApiDiagnosticWidget(
@@ -1432,7 +1384,7 @@ fun NoSiteConnectedCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "All demo and mock data has been removed, and all sessions are signed out. Connect your self-hosted WordPress site or WooCommerce store to get started.",
+                text = "All local database caches have been cleared, and all sessions are signed out. Connect your self-hosted WordPress site or WooCommerce store to get started.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,

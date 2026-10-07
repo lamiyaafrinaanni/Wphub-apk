@@ -1,5 +1,7 @@
 package com.example.ui
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -52,7 +54,6 @@ fun WPHubApp(viewModel: WPHubViewModel) {
     val customers by viewModel.customers.collectAsStateWithLifecycle()
     val plugins by viewModel.plugins.collectAsStateWithLifecycle()
     val coupons by viewModel.coupons.collectAsStateWithLifecycle()
-    val waterTelemetry by viewModel.waterTelemetry.collectAsStateWithLifecycle()
 
     val notifications by viewModel.notifications.collectAsStateWithLifecycle()
     val unreadNotificationCount by viewModel.unreadNotificationCount.collectAsStateWithLifecycle()
@@ -95,7 +96,12 @@ fun WPHubApp(viewModel: WPHubViewModel) {
         }
     }
 
-    when (appScreen) {
+    Crossfade(
+        targetState = appScreen,
+        animationSpec = tween(durationMillis = 600),
+        label = "app_screen_fade"
+    ) { screen ->
+        when (screen) {
         AppScreen.SPLASH -> {
             SplashScreen(
                 onAnimationComplete = {
@@ -224,7 +230,6 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                                 posts = posts,
                                 plugins = plugins,
                                 customers = customers,
-                                waterTelemetry = waterTelemetry,
                                 dashboardWidgets = dashboardWidgets,
                                 notifications = notifications,
                                 isRefreshing = isSyncing,
@@ -262,11 +267,7 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                                     },
                                     onDeleteProduct = { id -> viewModel.deleteProduct(id) },
                                     onSaveCoupon = { code, type, amt, limit -> viewModel.saveCoupon(code, type, amt, limit) },
-                                    onShowMessage = { viewModel.showMessage(it) },
-                                    onPlaceCustomOrder = { name, email, items, total ->
-                                        viewModel.placeWooCommerceOrder(name, email, items, total)
-                                    },
-                                    onTriggerSimulatedOrderAlert = { viewModel.triggerSimulatedOrderAlert() }
+                                    onShowMessage = { viewModel.showMessage(it) }
                                 )
                             } else {
                                 Box(
@@ -312,7 +313,6 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                         HubTab.TOOLS -> {
                             ToolsScreen(
                                 plugins = plugins,
-                                waterTelemetry = waterTelemetry,
                                 notificationSettings = notificationSettings,
                                 currentSite = currentSite,
                                 allSites = allSites,
@@ -328,24 +328,24 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                                     viewModel.signOutAll()
                                     appScreen = AppScreen.CONNECT
                                 },
-                                onSignOutAllAndClearDemoData = {
-                                    viewModel.signOutAllAndClearDemoData()
+                                onSignOutAllAndResetDatabase = {
+                                    viewModel.signOutAllAndResetDatabase()
                                     appScreen = AppScreen.CONNECT
                                 },
                                 onUpdateNotificationSettings = { viewModel.updateNotificationSettings(it) },
-                                onTriggerTestOrderAlert = { viewModel.triggerSimulatedOrderAlert() },
-                                onTriggerTestCommentAlert = { viewModel.triggerSimulatedCommentAlert() },
-                                onTriggerTestLowStockAlert = { viewModel.triggerSimulatedLowStockAlert() },
-                                onTriggerTestInquiryAlert = { viewModel.triggerSimulatedInquiryAlert() },
+
                                 onTogglePlugin = { id, active -> viewModel.togglePlugin(id, active) },
                                 onUpdatePlugin = { id, newVer -> viewModel.updatePlugin(id, newVer) },
-                                onToggleWaterPump = { viewModel.toggleWaterPump() },
-                                onToggleWaterAutoMode = { viewModel.toggleWaterAutoMode() },
                                 onShowMessage = { viewModel.showMessage(it) }
                             )
                         }
                     }
                 }
+
+                // Global Floating REST API & Network Logs Overlay
+                com.example.ui.components.WordPressApiInspectorOverlay(
+                    onShowMessage = { viewModel.showMessage(it) }
+                )
             }
 
             // Site Switcher Modal Sheet
@@ -471,11 +471,7 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                     onMarkAllAsRead = { viewModel.markAllNotificationsAsRead() },
                     onClearAll = { viewModel.clearAllNotifications() },
                     onDeleteNotification = { id -> viewModel.deleteNotification(id) },
-                    onUpdateSettings = { newSettings -> viewModel.updateNotificationSettings(newSettings) },
-                    onTriggerTestOrderAlert = { viewModel.triggerSimulatedOrderAlert() },
-                    onTriggerTestCommentAlert = { viewModel.triggerSimulatedCommentAlert() },
-                    onTriggerTestLowStockAlert = { viewModel.triggerSimulatedLowStockAlert() },
-                    onTriggerTestInquiryAlert = { viewModel.triggerSimulatedInquiryAlert() }
+                    onUpdateSettings = { newSettings -> viewModel.updateNotificationSettings(newSettings) }
                 )
             }
 
@@ -499,7 +495,35 @@ fun WPHubApp(viewModel: WPHubViewModel) {
                     }
                 )
             }
+
+            // Secure user-confirmation dialog for untrusted external intents
+            val externalActionRequest by viewModel.externalActionRequest.collectAsStateWithLifecycle()
+            externalActionRequest?.let { req ->
+                AlertDialog(
+                    onDismissRequest = { viewModel.declineExternalAction() },
+                    icon = { Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    title = { Text("External Action Requested") },
+                    text = {
+                        Text("An external application wants to perform an action: switch current site or navigate to ${req.destinationTab ?: req.targetType ?: "Dashboard"}. For your security, do you want to approve this action?")
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = { viewModel.approveExternalAction(req) }
+                        ) {
+                            Text("Approve")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { viewModel.declineExternalAction() }
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
             }
         }
+    }
     }
 }

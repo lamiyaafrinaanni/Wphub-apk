@@ -46,12 +46,24 @@ class MainActivity : FragmentActivity() {
             ?: intent.getStringExtra("site_id")
 
         if (destinationTab != null || targetType != null) {
-            viewModel.handleNotificationNavigation(
-                destinationTab = destinationTab,
-                targetType = targetType,
-                targetId = targetId,
-                siteId = siteId
-            )
+            val sessionToken = intent.getStringExtra("session_token")
+            val isTrusted = sessionToken == NotificationHelper.sessionToken
+
+            if (isTrusted) {
+                viewModel.handleNotificationNavigation(
+                    destinationTab = destinationTab,
+                    targetType = targetType,
+                    targetId = targetId,
+                    siteId = siteId
+                )
+            } else {
+                viewModel.requestExternalAction(
+                    destinationTab = destinationTab,
+                    targetType = targetType,
+                    targetId = targetId,
+                    siteId = siteId
+                )
+            }
         }
     }
 }

@@ -140,35 +140,4 @@ class ConnectionProgressViewModelTest {
         assertTrue(success.isComplete)
         assertFalse(success.isLoading)
     }
-
-    @Test
-    fun `connectDemoSite transitions to Success and persists demo site`() {
-        val latch = java.util.concurrent.CountDownLatch(1)
-        var resultSite: com.example.data.local.SiteEntity? = null
-        viewModel.connectDemoSite(simulateDelayMs = 0, onSuccess = {
-            resultSite = it
-            latch.countDown()
-        })
-
-        val startTime = System.currentTimeMillis()
-        while (latch.count > 0 && System.currentTimeMillis() - startTime < 3000) {
-            org.robolectric.shadows.ShadowLooper.idleMainLooper()
-            Thread.sleep(50)
-        }
-
-        assertNotNull(resultSite)
-        assertTrue(resultSite?.name?.contains("Site Administrator") == true || resultSite?.name?.contains("Apex") == true)
-        assertTrue(resultSite?.isAuthenticated == true)
-
-        val state = viewModel.progressState.value
-        assertTrue("State should transition to Success: $state", state is ProgressState.Success)
-        val success = state as ProgressState.Success
-        assertTrue(success.site.name.contains("Site Administrator") || success.site.name.contains("Apex"))
-
-        runBlocking {
-            val currentDbSite = db.siteDao().getCurrentSite().first()
-            assertNotNull(currentDbSite)
-            assertTrue(currentDbSite?.name?.contains("Site Administrator") == true || currentDbSite?.name?.contains("Apex") == true)
-        }
-    }
 }

@@ -3,11 +3,14 @@ package com.example.data.repository
 import android.util.Log
 import com.example.data.local.*
 import com.example.data.remote.WordPressRestClient
+import com.example.data.security.CryptKeeper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -20,7 +23,6 @@ class WPHubRepository(private val db: AppDatabase) {
     private val customerDao = db.customerDao()
     private val pluginDao = db.pluginDao()
     private val couponDao = db.couponDao()
-    private val telemetryDao = db.waterTelemetryDao()
     private val notificationDao = db.notificationDao()
     private val notificationSettingsDao = db.notificationSettingsDao()
     private val widgetDao = db.dashboardWidgetDao()
@@ -34,8 +36,14 @@ class WPHubRepository(private val db: AppDatabase) {
     }
 
     // Sites
-    fun getAllSites(): Flow<List<SiteEntity>> = siteDao.getAllSites()
-    fun getCurrentSite(): Flow<SiteEntity?> = siteDao.getCurrentSite()
+    fun getAllSites(): Flow<List<SiteEntity>> = siteDao.getAllSites().map { list ->
+        list.map { site ->
+            site.copy(appPasswordToken = CryptKeeper.decrypt(site.appPasswordToken))
+        }
+    }
+    fun getCurrentSite(): Flow<SiteEntity?> = siteDao.getCurrentSite().map { site ->
+        site?.copy(appPasswordToken = CryptKeeper.decrypt(site.appPasswordToken))
+    }
 
     suspend fun switchSite(siteId: String) {
         siteDao.setCurrentSite(siteId)
@@ -68,7 +76,10 @@ class WPHubRepository(private val db: AppDatabase) {
         // Unset current flag on existing active site
         val current = siteDao.getCurrentSiteDirect()
         if (current != null && current.id != targetSiteId) {
-            siteDao.updateSite(current.copy(isCurrent = false))
+            siteDao.updateSite(current.copy(
+                isCurrent = false,
+                appPasswordToken = CryptKeeper.encrypt(CryptKeeper.decrypt(current.appPasswordToken))
+            ))
         }
 
         // Live WordPress REST API Synchronous Fetch
@@ -107,49 +118,23 @@ class WPHubRepository(private val db: AppDatabase) {
                 couponDao.insertCoupons(syncResult.coupons)
             }
 
-            siteDao.insertSite(syncResult.site)
-            inspectAndAutoDesignDashboard(targetSiteId)
-            return syncResult.site
-        } else {
-            // Fallback offline entity if network call failed
-            val fallbackSite = SiteEntity(
-                id = targetSiteId,
-                name = siteName.ifBlank { "Connected WordPress Site" },
-                url = cleanUrl,
-                iconEmoji = "🌐",
-                sslEnabled = cleanUrl.startsWith("https"),
-                restApiStatus = "Connected (WP REST v2 • $usernameOrEmail)",
-                isCurrent = true,
-                totalSales = 0.0,
-                totalPosts = 0,
-                totalPages = 0,
-                totalCategories = 0,
-                totalComments = 0,
-                totalOrders = 0,
-                visitorsToday = 0,
-                lastSyncTime = "Just now",
-                username = usernameOrEmail,
-                userEmail = "$usernameOrEmail@${cleanUrl.removePrefix("https://").removePrefix("http://")}",
-                userDisplayName = displayName ?: usernameOrEmail,
-                userRole = role,
-                appPasswordToken = passwordOrToken,
-                isAuthenticated = true,
-                siteType = "blog",
-                hasWooCommerce = false,
-                activeTheme = "WordPress Active Theme",
-                activeThemeVersion = "1.0",
-                wpVersion = "6.6",
-                phpVersion = "8.2",
-                tagline = "WordPress Site"
+            // Encrypt password before saving to SQLite
+            val encryptedSite = syncResult.site.copy(
+                appPasswordToken = CryptKeeper.encrypt(syncResult.site.appPasswordToken),
+                isDemo = false
             )
-            siteDao.insertSite(fallbackSite)
+            siteDao.insertSite(encryptedSite)
             inspectAndAutoDesignDashboard(targetSiteId)
-            return fallbackSite
+            return encryptedSite
+        } else {
+            throw IOException("Failed to connect to WordPress REST API. Please check your network connection or verify that URL and Application Password are correct.")
         }
     }
 
     suspend fun syncLiveSiteData(siteId: String): String {
-        val site = siteDao.getSiteById(siteId) ?: return "Site not found"
+        val site = siteDao.getSiteById(siteId)?.let {
+            it.copy(appPasswordToken = CryptKeeper.decrypt(it.appPasswordToken))
+        } ?: return "Site not found"
         if (site.username.isNotBlank() && site.appPasswordToken.isNotBlank()) {
             val syncResult = try {
                 restClient.syncAllWordPressData(
@@ -184,7 +169,11 @@ class WPHubRepository(private val db: AppDatabase) {
                 if (syncResult.coupons.isNotEmpty()) {
                     couponDao.insertCoupons(syncResult.coupons)
                 }
-                siteDao.updateSite(syncResult.site)
+                val encryptedSite = syncResult.site.copy(
+                    appPasswordToken = CryptKeeper.encrypt(syncResult.site.appPasswordToken),
+                    isDemo = site.isDemo
+                )
+                siteDao.updateSite(encryptedSite)
                 inspectAndAutoDesignDashboard(site.id)
                 return syncResult.message
             }
@@ -194,8 +183,14 @@ class WPHubRepository(private val db: AppDatabase) {
     }
 
     suspend fun logoutSite(siteId: String) {
-        val site = siteDao.getSiteById(siteId) ?: return
-        siteDao.updateSite(site.copy(isAuthenticated = false))
+        val site = siteDao.getSiteById(siteId)?.let {
+            it.copy(appPasswordToken = CryptKeeper.decrypt(it.appPasswordToken))
+        } ?: return
+        val encryptedSite = site.copy(
+            isAuthenticated = false,
+            appPasswordToken = CryptKeeper.encrypt(site.appPasswordToken)
+        )
+        siteDao.updateSite(encryptedSite)
     }
 
     suspend fun addNewSite(name: String, url: String, appPassword: String): Boolean {
@@ -542,12 +537,6 @@ class WPHubRepository(private val db: AppDatabase) {
         couponDao.insertCoupon(coupon)
     }
 
-    // Water Telemetry
-    fun getTelemetryForSite(siteId: String): Flow<WaterTelemetryEntity?> = telemetryDao.getTelemetryForSite(siteId)
-
-    suspend fun updateTelemetry(telemetry: WaterTelemetryEntity) {
-        telemetryDao.updateTelemetry(telemetry)
-    }
 
     // Notifications
     fun getNotificationsForSite(siteId: String): Flow<List<NotificationItemEntity>> =
@@ -595,7 +584,6 @@ class WPHubRepository(private val db: AppDatabase) {
         customerDao.clearAllCustomers()
         pluginDao.clearAllPlugins()
         couponDao.clearAllCoupons()
-        telemetryDao.clearAllTelemetry()
         notificationDao.clearAllNotificationsGlobal()
         widgetDao.clearAllWidgets()
         notificationSettingsDao.clearAllSettings()
@@ -614,7 +602,6 @@ class WPHubRepository(private val db: AppDatabase) {
     }
 
     suspend fun ensureActiveSessionOnStartup() {
-        siteDao.deleteDemoSites()
         val sites = siteDao.getAllSites().firstOrNull() ?: emptyList()
         if (sites.isNotEmpty()) {
             val hasCurrent = sites.any { it.isCurrent && it.isAuthenticated }
